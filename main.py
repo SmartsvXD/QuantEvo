@@ -20,16 +20,14 @@ import plt
 
 tickers = ["SPY", "AGG", "EFA"]
 pesi = [0.5, 0.3, 0.2]
-nSims = 20000
+nSims = 200
 
 portafoglio = dataManager.Portafoglio(tickers, pesi)
 portafoglio.calcolaStatsStoriche()
 
 sim = monteCarlo.MonteCarlo(portafoglio, nSims=nSims)
-
 results = sim.runSimulation(verbose=1)
 
 plot = plt.Plotter()
-
 plot.setup()
 plot.plot(results)
