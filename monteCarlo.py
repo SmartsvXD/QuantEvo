@@ -68,28 +68,61 @@ class MonteCarlo:
         giorni_per_mese = int(GIORNI_IN_UN_ANNO / 12)
         mesi_totali = self.anni * 12
 
-        # Precalcolo degli step di ribilanciamento mensile
-        # mesi = np.arange(self.orizzonte) // giorni_per_mese
+        # Media e volatilità storica dei rendimenti da dividendo giornalieri per ogni asset
+        dividend_return_mean = np.array(
+            [
+                self.portafoglio.statsComponenti.dividend_return_mean[t]
+                if t in self.portafoglio.statsComponenti.dividend_return_mean
+                else 0.0
+                for t in self.portafoglio.tickers
+            ]
+        )
+        dividend_return_std = np.array(
+            [
+                self.portafoglio.statsComponenti.dividend_return_std[t]
+                if t in self.portafoglio.statsComponenti.dividend_return_std
+                else 0.0
+                for t in self.portafoglio.tickers
+            ]
+        )
+
+        # Simulazione stocastica dei rendimenti da dividendo giornalieri (GBM additivo)
+        Z_div = np.random.randn(self.nSims, self.orizzonte, n_asset)
+        dividend_return_sim = (
+            dividend_return_mean * self.dt
+            + dividend_return_std * np.sqrt(self.dt) * Z_div
+        )
+
+        # Array per accumulare dividendi mensili
+        dividendi_mensili = np.zeros((self.nSims, n_asset))
+
         nuovi_fondi = np.zeros((self.orizzonte,))
         nuovi_fondi[::giorni_per_mese] = self.ribilancio
         nuovi_fondi[0] = 0  # nessun nuovo fondo al giorno 0
 
-        # Vettorializzazione della simulazione
         for day in range(1, self.orizzonte):
-            # Aggiorna asset_values per tutti i percorsi in parallelo
             asset_values[:, day, :] = asset_values[:, day - 1, :] * np.exp(
                 incrementiGiornalieri[:, day, :]
             )
 
-            # Se è giorno di ribilanciamento, aggiungi nuovi fondi e ribilancia
+            # Calcola dividendi giornalieri simulati (stocastici)
+            dividendi_giornalieri = (
+                asset_values[:, day, :] * dividend_return_sim[:, day, :]
+            )
+            dividendi_mensili += dividendi_giornalieri
+
             if day % giorni_per_mese == 0:
-                # Somma asset e aggiungi nuovi fondi, poi ribilancia secondo pesi
                 totale_pre_ribilancio = asset_values[:, day, :].sum(axis=1)
-                asset_values[:, day, :] = (totale_pre_ribilancio + self.ribilancio)[
+                totale_da_investire = (
+                    totale_pre_ribilancio
+                    + self.ribilancio
+                    + dividendi_mensili.sum(axis=1)
+                )
+                asset_values[:, day, :] = (totale_da_investire)[
                     :, None
                 ] * self.portafoglio.pesi
+                dividendi_mensili[:] = 0
 
-        # Calcola il valore totale del portafoglio per ogni simulazione e giorno
         valoriPortafoglio = asset_values.sum(axis=2)
 
         results = MonteCarloResults()
@@ -101,7 +134,6 @@ class MonteCarlo:
             results.valoriFinali, [10, 25, 75, 90]
         )
 
-        # capitale investito totale
         capitale_investito_totale = self.S0 + self.ribilancio * mesi_totali
         results.probPerdita = np.mean(results.valoriFinali < capitale_investito_totale)
 
@@ -115,7 +147,7 @@ class MonteCarlo:
 
         if verbose:
             print(
-                f"\nRisultati ({self.anni} anni, investimenti mensili e ribilanciamento parziale):"
+                f"\nRisultati ({self.anni} anni, investimenti mensili, ribilanciamento e reinvestimento dividendi):"
             )
             print(f"Media valore finale: {results.media:.4f}")
             print(f"Mediana valore finale: {results.mediana:.4f}")

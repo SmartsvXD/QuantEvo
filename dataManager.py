@@ -99,6 +99,34 @@ class Portafoglio:
         else:
             self.statsComponenti.rendimenti_totali = self.statsComponenti.storico
 
+        # Calcola la serie storica dei rendimenti da dividendo giornalieri per ogni asset
+        self.statsComponenti.dividend_return_series = {}
+        self.statsComponenti.dividend_return_mean = {}
+        self.statsComponenti.dividend_return_std = {}
+        if self.statsComponenti.dividends is not None:
+            for ticker in self.tickers:
+                if ticker in self.statsComponenti.dividends:
+                    div_return = (
+                        self.statsComponenti.dividends[ticker]
+                        / self.statsComponenti.close[ticker].shift(1)
+                    ).fillna(0)
+                    self.statsComponenti.dividend_return_series[ticker] = div_return
+                    self.statsComponenti.dividend_return_mean[ticker] = (
+                        div_return.mean()
+                    )
+                    self.statsComponenti.dividend_return_std[ticker] = div_return.std(
+                        ddof=1
+                    )
+                else:
+                    self.statsComponenti.dividend_return_series[ticker] = None
+                    self.statsComponenti.dividend_return_mean[ticker] = 0.0
+                    self.statsComponenti.dividend_return_std[ticker] = 0.0
+        else:
+            for ticker in self.tickers:
+                self.statsComponenti.dividend_return_series[ticker] = None
+                self.statsComponenti.dividend_return_mean[ticker] = 0.0
+                self.statsComponenti.dividend_return_std[ticker] = 0.0
+                
         # Calcola rendimento storico giornaliero del portafoglio (inclusi dividendi)
         self.statsPortafoglio.storico = (
             self.statsComponenti.rendimenti_totali @ self.pesi

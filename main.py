@@ -20,6 +20,9 @@ Il progetto è pensato come strumento pratico per investitori e analisti quantit
 L'obbiettivo ultimo è utilizzare questo codice per prendere deciioni d'investimento reali, con l'obbiettivo di massimizzare i profitti.
 """
 
+# Ricordati di verificare se un ETF è a distribuzione o ad accumulazione
+
+
 import dataManager
 import monteCarlo
 import plt
