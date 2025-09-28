@@ -25,7 +25,9 @@ class MonteCarloResults:
 
 
 class MonteCarlo:
-    def __init__(self, portafoglio: Portafoglio, S0=1.0, ribilancio = 1.0,  anni=10, nSims=20000):
+    def __init__(
+        self, portafoglio: Portafoglio, S0=1.0, ribilancio=1.0, anni=10, nSims=20000
+    ):
         self.S0 = S0
         self.ribilancio = ribilancio
         self.anni = anni
@@ -59,28 +61,36 @@ class MonteCarlo:
             self.drift + self.coeffDiffusione * Z
         )  # shape (nSims, orizzonte, n_asset)
 
-        # Array per il valore totale del portafoglio
-        valoriPortafoglio = np.zeros((self.nSims, self.orizzonte))
-        valoriPortafoglio[:, 0] = self.S0
+        # Array per il valore degli asset in ogni simulazione e giorno
+        asset_values = np.zeros((self.nSims, self.orizzonte, n_asset))
+        asset_values[:, 0, :] = self.S0 * self.portafoglio.pesi
 
-        # Simulazione con investimento mensile e ribilanciamento parziale
         giorni_per_mese = int(GIORNI_IN_UN_ANNO / 12)
         mesi_totali = self.anni * 12
 
-        for sim in range(self.nSims):
-            # stato iniziale: allocazione secondo pesi
-            asset_values = self.S0 * self.portafoglio.pesi.copy()
+        # Precalcolo degli step di ribilanciamento mensile
+        # mesi = np.arange(self.orizzonte) // giorni_per_mese
+        nuovi_fondi = np.zeros((self.orizzonte,))
+        nuovi_fondi[::giorni_per_mese] = self.ribilancio
+        nuovi_fondi[0] = 0  # nessun nuovo fondo al giorno 0
 
-            for day in range(1, self.orizzonte):
-                # aggiorna valore di ciascun asset
-                asset_values = asset_values * np.exp(incrementiGiornalieri[sim, day, :])
+        # Vettorializzazione della simulazione
+        for day in range(1, self.orizzonte):
+            # Aggiorna asset_values per tutti i percorsi in parallelo
+            asset_values[:, day, :] = asset_values[:, day - 1, :] * np.exp(
+                incrementiGiornalieri[:, day, :]
+            )
 
-                # ogni mese: aggiungi nuovi fondi e ribilancia
-                if day % giorni_per_mese == 0:
-                    asset_values = (sum(asset_values) + self.ribilancio) * self.portafoglio.pesi
-                    # ribilanciamento parziale: investo solo i nuovi fondi secondo pesi target
+            # Se è giorno di ribilanciamento, aggiungi nuovi fondi e ribilancia
+            if day % giorni_per_mese == 0:
+                # Somma asset e aggiungi nuovi fondi, poi ribilancia secondo pesi
+                totale_pre_ribilancio = asset_values[:, day, :].sum(axis=1)
+                asset_values[:, day, :] = (totale_pre_ribilancio + self.ribilancio)[
+                    :, None
+                ] * self.portafoglio.pesi
 
-                valoriPortafoglio[sim, day] = asset_values.sum()
+        # Calcola il valore totale del portafoglio per ogni simulazione e giorno
+        valoriPortafoglio = asset_values.sum(axis=2)
 
         results = MonteCarloResults()
         results.valoriDelPortafoglio = valoriPortafoglio

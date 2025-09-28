@@ -30,12 +30,7 @@ class Plotter:
         plt.plot(p50_t, color="red", linewidth=2, label="Mediana")
         plt.plot(p10_t, color="orange", linestyle="--", label="10° percentile")
         plt.plot(p90_t, color="green", linestyle="--", label="90° percentile")
-        plt.plot(
-            results.valoriDegliInvestimenti,
-            color="blue",
-            linewidth=2,
-            label="Soldi Investiti",
-        )
+        plt.plot(results.valoriDegliInvestimenti, color = "blue", linewidth = 2, label = "Soldi Investiti")
 
         plt.xlabel("Anni")
         plt.xticks(
