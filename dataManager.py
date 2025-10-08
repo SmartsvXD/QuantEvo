@@ -86,11 +86,11 @@ class Portafoglio:
         # Calcola rendimento storico giornaliero del portafoglio
         self.statsPortafoglio.storico = (self.statsComponenti.storico @ self.pesi).values
 
-        # statistiche giornaliere
-        self.statsComponenti.rendimentoGiornaliero = self.statsComponenti.storico.mean()
+        # statistiche giornaliere, pesando per dare più importanza a dati più recenti
+        self.statsComponenti.rendimentoGiornaliero = self.statsComponenti.storico.ewm(span=75).mean().mean()
         self.statsPortafoglio.rendimentoGiornaliero = np.mean(self.statsPortafoglio.storico)
 
-        self.statsComponenti.volatilitàGiornaliera = self.statsComponenti.storico.std(ddof=1)
+        self.statsComponenti.volatilitàGiornaliera = self.statsComponenti.storico.ewm(span=75).std().mean()
         cov_matrix = self.statsComponenti.storico.cov()
         self.statsPortafoglio.volatilitàGiornaliera = np.sqrt(self.pesi.T @ cov_matrix.values @ self.pesi)
 

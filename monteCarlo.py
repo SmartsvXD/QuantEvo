@@ -6,28 +6,30 @@ import time
 
 
 class MonteCarloResults:
-    incrementoTotale = None
-    valoriDelPortafoglio = None
-    valoriDegliInvestimenti = None
+    def __init__(self):
+        self.incrementoTotale = None
+        self.valoriDelPortafoglio = None
+        self.valoriDegliInvestimenti = None
 
-    valoriFinali = None
-    mediana = None
-    media = None
+        self.valoriFinali = None
+        self.mediana = None
+        self.media = None
 
-    p10 = None
-    p25 = None
-    p75 = None
-    p90 = None
+        self.p10 = None
+        self.p25 = None
+        self.p75 = None
+        self.p90 = None
 
-    probPerdita = None
+        self.probPerdita = None
 
-    anni = None
-    orizzonte = None
-    nSims = None
+        self.anni = None
+        self.orizzonte = None
+        self.nSims = None
+        self.simTime = None
 
 
 class MonteCarlo:
-    def __init__(self, portafoglio: Portafoglio, S0=1.0, ribilancio=1.0, anni=10, nSims=20000):
+    def __init__(self, portafoglio: Portafoglio, S0=1.0, ribilancio=1.0, anni=3, nSims=20000):
         self.S0 = S0
         self.ribilancio = ribilancio
         self.anni = anni
@@ -72,7 +74,6 @@ class MonteCarlo:
             self.dt,
             self.ribilancio,
         )
-        print(time.time() - t0)
 
         results.p10, results.p25, results.p75, results.p90 = percentili
 
@@ -86,6 +87,8 @@ class MonteCarlo:
         results.anni = self.anni
         results.orizzonte = self.orizzonte
         results.nSims = self.nSims
+        
+        results.simTime = time.time() - t0
 
         if verbose:
             print(f"\nRisultati ({self.anni} anni, investimenti mensili, ribilanciamento e reinvestimento dividendi):")
@@ -95,5 +98,6 @@ class MonteCarlo:
                 f"10%-25%-75%-90% percentili: {results.p10:.4f}, {results.p25:.4f}, {results.p75:.4f}, {results.p90:.4f}"
             )
             print(f"Probabilità di perdere capitale investito: {results.probPerdita:.2%}")
+            print(f"Tempo di simulazione: {results.simTime}")
 
         return results
