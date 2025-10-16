@@ -30,7 +30,7 @@ import plt
 tickers = ["SPY", "AGG", "EFA"]
 pesi = [0.5, 0.3, 0.2]
 nSims = 20000
-anni = 10
+anni = 3
 
 portafoglio = dataManager.Portafoglio(tickers, pesi)
 portafoglio.calcolaStatsStoriche()

@@ -1,4 +1,5 @@
 from settings import GIORNI_IN_UN_ANNO
+from colorama import Fore, Style
 from dataManager import Portafoglio
 import numpy as np
 from acceleratedFunctions import _runSimulation
@@ -7,6 +8,7 @@ import time
 
 class MonteCarloResults:
     def __init__(self):
+        self.investimentoTotale = None
         self.incrementoTotale = None
         self.valoriDelPortafoglio = None
         self.valoriDegliInvestimenti = None
@@ -26,6 +28,7 @@ class MonteCarloResults:
         self.orizzonte = None
         self.nSims = None
         self.simTime = None
+        self.S0 = None
 
 
 class MonteCarlo:
@@ -33,35 +36,36 @@ class MonteCarlo:
         self.S0 = S0
         self.ribilancio = ribilancio
         self.anni = anni
-        self.orizzonte = GIORNI_IN_UN_ANNO * anni  # giornate totali
-        self.nSims = nSims  # numero di simulazioni
+        self.orizzonte = GIORNI_IN_UN_ANNO * anni
+        self.nSims = nSims
         self.dt = 1 / GIORNI_IN_UN_ANNO
 
         self.portafoglio: Portafoglio = portafoglio
 
-        # generiamo tutte le simulazioni in modo vettoriale
-
-        # parte deterministica (trend medio)
-        # dice “quanto ci si aspetta che il log-rendimento cresca mediamente” in un singolo passo temporale.
+        # Il drift del GBM per log-rendimenti è: (μ - 0.5σ²)dt
         self.drift = (
             self.portafoglio.statsComponenti.muGBM.values
             - 0.5 * self.portafoglio.statsComponenti.volatilitàAnnua.values**2
         ) * self.dt
 
-        # coefficiente della parte stocastica rappresenta la variazione casuale dovuta al rumore di mercato.
         self.coeffDiffusione = self.portafoglio.statsComponenti.volatilitàAnnua.values * np.sqrt(self.dt)
 
     def runSimulation(self, verbose=0):
         t0 = time.time()
         nAsset = len(self.portafoglio.pesi)
         Z = np.random.randn(self.nSims, self.orizzonte, nAsset)
-        Z_div = np.random.randn(self.nSims, self.orizzonte, nAsset)
 
         results = MonteCarloResults()
 
-        results.valoriDelPortafoglio, results.valoriFinali, results.mediana, results.media, percentili = _runSimulation(
+        (
+            results.investimentoTotale,
+            results.valoriDelPortafoglio,
+            results.valoriFinali,
+            results.mediana,
+            results.media,
+            percentili,
+        ) = _runSimulation(
             Z,
-            Z_div,
             nAsset,
             self.portafoglio.pesi,
             self.nSims,
@@ -69,16 +73,13 @@ class MonteCarlo:
             self.drift,
             self.coeffDiffusione,
             self.S0,
-            self.portafoglio.statsComponenti.mediaDividendi,
-            self.portafoglio.statsComponenti.volatilitàDividendi,
+            self.portafoglio.statsComponenti.rendimentoMedioDividendi,
             self.dt,
             self.ribilancio,
         )
 
         results.p10, results.p25, results.p75, results.p90 = percentili
-
-        capitale_investito_totale = self.S0 + self.ribilancio * self.anni * 12
-        results.probPerdita = np.mean(results.valoriFinali < capitale_investito_totale)
+        results.probPerdita = np.mean(results.valoriFinali < results.investimentoTotale)
 
         results.valoriDegliInvestimenti = (
             self.S0 + (np.arange(self.orizzonte) // int(GIORNI_IN_UN_ANNO / 12)) * self.ribilancio
@@ -87,17 +88,24 @@ class MonteCarlo:
         results.anni = self.anni
         results.orizzonte = self.orizzonte
         results.nSims = self.nSims
-        
+        results.S0 = self.S0
+
         results.simTime = time.time() - t0
 
         if verbose:
-            print(f"\nRisultati ({self.anni} anni, investimenti mensili, ribilanciamento e reinvestimento dividendi):")
-            print(f"Media valore finale: {results.media:.4f}")
-            print(f"Mediana valore finale: {results.mediana:.4f}")
+            print(f"\n{Fore.MAGENTA}Risultati{Fore.RESET}:")
+            print(f"    {Fore.CYAN}Investimento{Fore.RESET}: \t€{results.investimentoTotale:05.2f}")
+            print(f"    {Fore.YELLOW}Media finale{Fore.RESET}: \t{results.media:06.2%}")
+            print(f"    {Style.BRIGHT}{Fore.YELLOW}Mediana finale{Style.RESET_ALL}: \t{results.mediana:06.2%}")
+
+            print(f"    Percentili, {Style.BRIGHT}{Fore.RED}10%{Style.RESET_ALL}: \t{results.p10:06.2%}")
+            print(f"                {Fore.LIGHTRED_EX}25%{Fore.RESET}: \t{results.p25:06.2%}")
+            print(f"                {Fore.LIGHTGREEN_EX}75%{Fore.RESET}: \t{results.p75:06.2%}")
+            print(f"                {Style.BRIGHT}{Fore.GREEN}90%{Style.RESET_ALL}: \t{results.p90:06.2%}")
+
             print(
-                f"10%-25%-75%-90% percentili: {results.p10:.4f}, {results.p25:.4f}, {results.p75:.4f}, {results.p90:.4f}"
+                f"    {Style.BRIGHT}{Fore.LIGHTBLACK_EX}Prob. perdita{Style.RESET_ALL}: \t{results.probPerdita:06.2%}"
             )
-            print(f"Probabilità di perdere capitale investito: {results.probPerdita:.2%}")
-            print(f"Tempo di simulazione: {results.simTime}")
+            print(f"\n{Fore.BLUE}Tempo di simulazione{Fore.RESET}: {results.simTime:.2f}s")
 
         return results

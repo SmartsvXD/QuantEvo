@@ -10,6 +10,7 @@ class Plotter:
 
     def setup(self):
         plt.figure(figsize=self.figsize)
+        plt.xlabel("Anni")
 
     def plot(self, results: MonteCarloResults):
         # plot di alcune traiettorie a caso (per leggibilità)
@@ -31,14 +32,13 @@ class Plotter:
         plt.plot(p10_t, color="orange", linestyle="--", label="10° percentile")
         plt.plot(p90_t, color="green", linestyle="--", label="90° percentile")
         plt.plot(results.valoriDegliInvestimenti, color = "blue", linewidth = 2, label = "Soldi Investiti")
-
-        plt.xlabel("Anni")
+        
         plt.xticks(
             np.arange(0, results.orizzonte + 1, GIORNI_IN_UN_ANNO),
             np.arange(0, results.anni + 1),
         )
-        plt.ylabel("Valore del portafoglio (S0=1)")
-        plt.title("Simulazioni GBM del portafoglio (10 anni)")
+        plt.ylabel(f"Valore del portafoglio (S0={results.S0})")
+        plt.title(f"Simulazioni GBM del portafoglio ({results.anni} anni)")
         plt.legend()
         plt.grid(alpha=0.2)
         plt.show()
