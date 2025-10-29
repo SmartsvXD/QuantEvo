@@ -1,0 +1,4 @@
+colorama
+yfinance
+numba
+matplotlib
