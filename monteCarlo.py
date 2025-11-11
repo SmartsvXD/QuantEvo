@@ -1,9 +1,8 @@
 from settings import GIORNI_IN_UN_ANNO
 from colorama import Fore, Style
-from dataManager import Portafoglio
+from dataManager import Portafoglio, Titoli
 import numpy as np
-from acceleratedFunctions import _runSimulation
-import time
+from acceleratedFunctions import _simulaTitoli
 
 
 class MonteCarloResults:
@@ -32,80 +31,74 @@ class MonteCarloResults:
 
 
 class MonteCarlo:
-    def __init__(self, portafoglio: Portafoglio, S0=1.0, ribilancio=1.0, anni=3, nSims=20000):
+    def __init__(self, titoli: Titoli, S0=1.0, ribilancio=1.0, anni=1, nSims=20000):
         self.S0 = S0
         self.ribilancio = ribilancio
         self.anni = anni
-        self.orizzonte = GIORNI_IN_UN_ANNO * anni
         self.nSims = nSims
+        self.titoli = titoli
+
+        self.orizzonte = GIORNI_IN_UN_ANNO * anni
         self.dt = 1 / GIORNI_IN_UN_ANNO
 
-        self.portafoglio: Portafoglio = portafoglio
-
         # Il drift del GBM per log-rendimenti è: (μ - 0.5σ²)dt
-        self.drift = (
-            self.portafoglio.statsComponenti.muGBM.values
-            - 0.5 * self.portafoglio.statsComponenti.volatilitàAnnua.values**2
-        ) * self.dt
+        self.drift = (self.titoli.stats.rendimentoAnnuo - 0.5 * self.titoli.stats.volatilitàAnnua**2) * self.dt
 
-        self.coeffDiffusione = self.portafoglio.statsComponenti.volatilitàAnnua.values * np.sqrt(self.dt)
+        self.coeffDiffusione = self.titoli.stats.volatilitàAnnua * np.sqrt(self.dt)
 
-    def runSimulation(self, verbose=0):
-        t0 = time.time()
-        nAsset = len(self.portafoglio.pesi)
-        Z = np.random.randn(self.nSims, self.orizzonte, nAsset)
+        self.L = np.linalg.cholesky(self.titoli.corr)
 
-        results = MonteCarloResults()
+    def simulaTitoli(self, verbose=1):
+        # t0 = time.time()
+        # Genera rumore indipendente
+        Z_ind = np.random.randn(self.nSims, self.orizzonte, len(self.titoli.stats.nomi))
+        # Applica correlazione usando decomposizione di Cholesky
+        Z = np.einsum("ijk,kl->ijl", Z_ind, self.L)
 
-        (
-            results.investimentoTotale,
-            results.valoriDelPortafoglio,
-            results.valoriFinali,
-            results.mediana,
-            results.media,
-            percentili,
-        ) = _runSimulation(
+        (self.investimento, self.valoriTitoli) = _simulaTitoli(
             Z,
-            nAsset,
-            self.portafoglio.pesi,
             self.nSims,
             self.orizzonte,
             self.drift,
             self.coeffDiffusione,
             self.S0,
-            self.portafoglio.statsComponenti.rendimentoMedioDividendi,
+            self.titoli.stats.rendimentoGiornalieroDividendi,
             self.dt,
-            self.ribilancio,
         )
 
-        results.p10, results.p25, results.p75, results.p90 = percentili
-        results.probPerdita = np.mean(results.valoriFinali < results.investimentoTotale)
+        # simTime = time.time() - t0
+        if verbose:
+            print(f"\n{Fore.MAGENTA}Performance dei Titoli{Fore.RESET}:")
+            for i, nome in enumerate(self.titoli.stats.nomi):
+                mediana = (np.median(self.valoriTitoli[:, -1, i]) / self.investimento) - 1
 
-        results.valoriDegliInvestimenti = (
-            self.S0 + (np.arange(self.orizzonte) // int(GIORNI_IN_UN_ANNO / 12)) * self.ribilancio
-        )
+                print(f"    {Fore.GREEN}{nome}{Fore.RESET}: ")
+                print(f"        {Fore.YELLOW}Mediana{Fore.RESET}: {mediana:.2%}")
 
-        results.anni = self.anni
-        results.orizzonte = self.orizzonte
-        results.nSims = self.nSims
-        results.S0 = self.S0
+    def valutaPortafoglio(self, portafoglio: Portafoglio, verbose=1):
+        valoriPortafoglioTitoli = self.valoriTitoli[portafoglio.indiciTitoli]
+        valoriPortafoglioPesati = valoriPortafoglioTitoli * portafoglio.pesi[:, np.newaxis, np.newaxis]
+        valoriPortafoglio = np.sum(valoriPortafoglioPesati, axis=0)
 
-        results.simTime = time.time() - t0
+        valoriPortafoglioFinale = valoriPortafoglio[-1] - 1
+
+        mediana = np.median(valoriPortafoglioFinale)
+        media = np.mean(valoriPortafoglioFinale)
+        
+        p10 = np.percentile(valoriPortafoglioFinale, 10)
+        p25 = np.percentile(valoriPortafoglioFinale, 25)
+        p75 = np.percentile(valoriPortafoglioFinale, 75)
+        p90 = np.percentile(valoriPortafoglioFinale, 90)
+
+        probPerdita = np.mean(valoriPortafoglioFinale < 0)
 
         if verbose:
-            print(f"\n{Fore.MAGENTA}Risultati{Fore.RESET}:")
-            print(f"    {Fore.CYAN}Investimento{Fore.RESET}: \t€{results.investimentoTotale:05.2f}")
-            print(f"    {Fore.YELLOW}Media finale{Fore.RESET}: \t{results.media:06.2%}")
-            print(f"    {Style.BRIGHT}{Fore.YELLOW}Mediana finale{Style.RESET_ALL}: \t{results.mediana:06.2%}")
-
-            print(f"    Percentili, {Style.BRIGHT}{Fore.RED}10%{Style.RESET_ALL}: \t{results.p10:06.2%}")
-            print(f"                {Fore.LIGHTRED_EX}25%{Fore.RESET}: \t{results.p25:06.2%}")
-            print(f"                {Fore.LIGHTGREEN_EX}75%{Fore.RESET}: \t{results.p75:06.2%}")
-            print(f"                {Style.BRIGHT}{Fore.GREEN}90%{Style.RESET_ALL}: \t{results.p90:06.2%}")
-
-            print(
-                f"    {Style.BRIGHT}{Fore.LIGHTBLACK_EX}Prob. perdita{Style.RESET_ALL}: \t{results.probPerdita:06.2%}"
-            )
-            print(f"\n{Fore.BLUE}Tempo di simulazione{Fore.RESET}: {results.simTime:.2f}s")
-
-        return results
+            print(f"\n{Fore.MAGENTA}Performance Portafoglio{Fore.RESET}:")
+            print(f"    {Fore.YELLOW}Mediana{Fore.RESET}:\t{mediana:.2%}")
+            print(f"    {Fore.YELLOW}Media{Fore.RESET}:\t{media:.2%}")
+            print(f"    {Fore.YELLOW}Percentili{Fore.RESET}:")
+            print(f"        {Fore.RED}10%{Fore.RESET}:\t{p10:.2%}")
+            print(f"        {Fore.LIGHTRED_EX}25%{Fore.RESET}:\t{p25:.2%}")
+            print(f"        {Fore.LIGHTGREEN_EX}75%{Fore.RESET}:\t{p75:.2%}")
+            print(f"        {Fore.GREEN}90%{Fore.RESET}:\t{p90:.2%}")
+            print(f"    {Fore.YELLOW}Probabilità di Perdita{Fore.RESET}:\t{probPerdita:.2%}")
