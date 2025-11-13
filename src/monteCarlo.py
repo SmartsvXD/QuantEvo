@@ -2,7 +2,7 @@ from src.const import GIORNI_IN_UN_ANNO
 from colorama import Fore
 from src.dataManager import Portafoglio, Titoli
 import numpy as np
-from src.acceleratedFunctions import _simulaTitoli
+from src.schiavi import _simulaTitoli
 import time
 import os
 import pickle as pk
