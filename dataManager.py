@@ -2,7 +2,11 @@ from settings import GIORNI_IN_UN_ANNO
 from colorama import Fore
 import yfinance as yf
 import numpy as np
-from acceleratedFunctions import _calcolaStatsTitoli, _calcolaCorrelazione
+from acceleratedFunctions import _calcolaStatsTitoli, _calcolaL
+import os
+import pickle as pk
+import datetime as dt
+import time
 
 
 class Stats:
@@ -13,10 +17,6 @@ class Stats:
 
     def __init__(self):
         self.nomi = []
-
-        self.close = None
-        self.dividendi = None
-        self.rendimenti = None
 
         self.rendimentoGiornaliero = None
         self.volatilitàGiornaliera = None
@@ -38,52 +38,95 @@ class Titoli:
         self.stats = Stats()
         self.stats.nomi = nomi
 
-        self.corr = None
+        self.download = 0
+        self.elaborazione = 0
 
-    def downloadYFinance(self, verbose=1):
+    def downloadYFinance(self, forzaDownload=1):
         """
         Scarica i dati storici da Yahoo Finance per i titoli specificati.
         Filtra i titoli con dati insufficienti e prepara i dati per il calcolo delle statistiche.
         """
-        if verbose:
-            print(f"{Fore.GREEN}Scaricando i dati da Yahoo Finance{Fore.LIGHTBLACK_EX}:")
+        t0 = time.time()
 
-        # auto_adjust=False per avere prezzi non aggiustati e calcolare total return manualmente
-        # Questo permette di separare correttamente price appreciation da dividendi
-        data = yf.download(
-            self.stats.nomi,
-            period="50y",
-            auto_adjust=False,
-            actions=True,  # per dividendi e split
-        )
+        self.download = 0
+        if not (os.path.exists("./data/titoli.data")) or forzaDownload:
+            self.download = 1
+        else:
+            with open("./data/info.data", "rb") as file:
+                info = pk.load(file)
 
-        if verbose:
-            print(Fore.RESET)
+            if (dt.date.today() - info["data"]).days >= 1:
+                self.download = 1
+            elif info["titoli"] != self.stats.nomi:
+                self.download = 1
+            else:
+                self.download = 0
 
-        # Estrae le serie principali: prezzi di chiusura e dividendi
-        close = data["Close"]
-        dividends = data["Dividends"] if "Dividends" in data else None
+        print()
+        if self.download:
+            print(f"{Fore.MAGENTA}Scaricando i dati da Yahoo Finance{Fore.RESET}:{Fore.LIGHTBLACK_EX}")
 
-        # Assicura che l'ordine delle colonne corrisponda a self.nomi
-        close = close[self.stats.nomi]
-        if dividends is not None:
-            dividends = dividends[self.stats.nomi]
+            # auto_adjust=False per avere prezzi non aggiustati e calcolare total return manualmente
+            # Questo permette di separare correttamente price appreciation da dividendi
+            data = yf.download(
+                self.stats.nomi,
+                period="50y",
+                auto_adjust=False,
+                actions=True,  # per dividendi e split
+            )
 
-        # Filtra ticker con almeno 1260 giorni di dati originali (circa 5 anni di trading)
-        giorni_minimi = 1260
-        nomi_invalidi = [ticker for ticker in self.stats.nomi if len(close[ticker].dropna()) <= giorni_minimi]
-        if nomi_invalidi != []:
-            print(f"{Fore.RED} I seguenti titoli non hanno un numero sufficiente di giorni di dati:")
-            for i in nomi_invalidi:
-                print(f"\t{i}")
-            exit()
+            # Estrae le serie principali: prezzi di chiusura e dividendi
+            close = data["Close"]
+            dividends = data["Dividends"] if "Dividends" in data else None
 
-        # Calcola i log-returns giornalieri: ln(P_t / P_{t-1})
-        self.stats.rendimenti = np.array(np.log(close / close.shift(1)).dropna(how="all")).T
-        # Salva i dividendi giornalieri
-        self.stats.dividendi = np.array(dividends).T
-        # Salva i prezzi di chiusura
-        self.stats.close = np.array(close).T
+            # Assicura che l'ordine delle colonne corrisponda a self.nomi
+            close = close[self.stats.nomi]
+            if dividends is not None:
+                dividends = dividends[self.stats.nomi]
+
+            # Filtra ticker con almeno 1260 giorni di dati originali (circa 5 anni di trading)
+            giorni_minimi = 1260
+            nomi_invalidi = [ticker for ticker in self.stats.nomi if len(close[ticker].dropna()) <= giorni_minimi]
+            if nomi_invalidi != []:
+                print(f"{Fore.RED} I seguenti titoli non hanno un numero sufficiente di giorni di dati:")
+                for i in nomi_invalidi:
+                    print(f"\t{i}")
+                print(Fore.RESET)
+                exit()
+
+            # Calcola i log-returns giornalieri: ln(P_t / P_{t-1})
+            rendimenti = np.array(np.log(close / close.shift(1)).dropna(how="all")).T
+            # Salva i dividendi giornalieri
+            dividendi = np.array(dividends).T
+            # Salva i prezzi di chiusura
+            close = np.array(close).T
+
+            print(
+                f"{Fore.MAGENTA}Salvando i dati in {Fore.RESET}./data/titoli.data{Fore.MAGENTA} e {Fore.RESET}./data/info.data{Fore.MAGENTA}...{Fore.RESET}"
+            )
+
+            info = {"data": dt.date.today(), "titoli": self.stats.nomi}
+            data = {"rendimenti": rendimenti, "dividendi": dividendi, "close": close}
+            with open("./data/info.data", "wb") as file:
+                pk.dump(info, file)
+
+            with open("./data/titoli.data", "wb") as file:
+                pk.dump(data, file)
+        else:
+            print(f"{Fore.MAGENTA}Caricando i dati da {Fore.RESET}./data/titoli.data{Fore.MAGENTA}...{Fore.RESET}")
+
+            with open("./data/titoli.data", "rb") as file:
+                data = pk.load(file)
+
+            rendimenti = data["rendimenti"]
+            dividendi = data["dividendi"]
+            close = data["close"]
+
+        downloadTime = time.time() - t0
+
+        print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({downloadTime:.2f}s)")
+
+        return rendimenti, dividendi, close
 
     def stampaDatiStorici(self):
         print(f"\n{Fore.MAGENTA}Dati Storici Titoli{Fore.RESET}: ")
@@ -105,22 +148,66 @@ class Titoli:
                 f"        {Fore.YELLOW}Rendimento da Dividendi{Fore.RESET}: \t{self.stats.rendimentoAnnuoDividendi[i]:06.2%}"
             )
 
-    def calcolaStatsStoriche(self, verbose=1):
+    def calcolaStatsStoriche(self, origine="yfinance", forzaDownload=1, forzaElaborazione=1, verbose=0):
         """
         Calcola le statistiche storiche per ciascun componente utilizzando la funzione accelerata.
         Include rendimenti, volatilità e rendimento da dividendi, e opzionalmente stampa i risultati.
         """
-        (
-            self.stats.rendimentoGiornaliero,
-            self.stats.volatilitàGiornaliera,
-            self.stats.rendimentoAnnuo,
-            self.stats.volatilitàAnnua,
-            self.stats.rendimentoAnnuoDividendi,
-            self.stats.rendimentoGiornalieroDividendi,
-            self.stats.volatilitàDividendi,
-        ) = _calcolaStatsTitoli(self.stats.nomi, self.stats.rendimenti, self.stats.dividendi, self.stats.close)
+        if origine == "yfinance":
+            rendimenti, dividendi, close = self.downloadYFinance(forzaDownload=forzaDownload)
 
-        self.corr = _calcolaCorrelazione(self.stats.rendimenti)
+        t0 = time.time()
+
+        print()
+        if forzaElaborazione or self.download or not (os.path.exists("./data/stats.data")):
+            self.elaborazione = 1
+
+            print(f"{Fore.MAGENTA}Elaborazione delle stats storiche dei titoli...{Fore.RESET}")
+
+            (
+                self.stats.rendimentoGiornaliero,
+                self.stats.volatilitàGiornaliera,
+                self.stats.rendimentoAnnuo,
+                self.stats.volatilitàAnnua,
+                self.stats.rendimentoAnnuoDividendi,
+                self.stats.rendimentoGiornalieroDividendi,
+                self.stats.volatilitàDividendi,
+            ) = _calcolaStatsTitoli(self.stats.nomi, rendimenti, dividendi, close)
+
+            self.L = _calcolaL(rendimenti)
+
+            data = {
+                "rendimentoGiornaliero": self.stats.rendimentoGiornaliero,
+                "volatilitàGiornaliera": self.stats.volatilitàGiornaliera,
+                "rendimentoAnnuo": self.stats.rendimentoAnnuo,
+                "volatilitàAnnua": self.stats.volatilitàAnnua,
+                "rendimentoAnnuoDividendi": self.stats.rendimentoAnnuoDividendi,
+                "rendimentoGiornalieroDividendi": self.stats.rendimentoGiornalieroDividendi,
+                "volatilitàDividendi": self.stats.volatilitàDividendi,
+                "L": self.L,
+            }
+
+            print(f"{Fore.MAGENTA}Salvando i dati in {Fore.RESET}./data/stats.data{Fore.MAGENTA}...{Fore.RESET}")
+            with open("./data/stats.data", "wb") as file:
+                pk.dump(data, file)
+        else:
+            self.elaborazione = 0
+
+            print(f"{Fore.MAGENTA}Caricando i dati da {Fore.RESET}./data/stats.data{Fore.MAGENTA}...{Fore.RESET}")
+            with open("./data/stats.data", "rb") as file:
+                data = pk.load(file)
+
+            self.stats.rendimentoGiornaliero = data["rendimentoGiornaliero"]
+            self.stats.volatilitàGiornaliera = data["volatilitàGiornaliera"]
+            self.stats.rendimentoAnnuo = data["rendimentoAnnuo"]
+            self.stats.volatilitàAnnua = data["volatilitàAnnua"]
+            self.stats.rendimentoAnnuoDividendi = data["rendimentoAnnuoDividendi"]
+            self.stats.rendimentoGiornalieroDividendi = data["rendimentoGiornalieroDividendi"]
+            self.stats.volatilitàDividendi = data["volatilitàDividendi"]
+            self.L = data["L"]
+
+        statsTime = time.time() - t0
+        print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({statsTime:.2f}s)")
 
         if verbose:
             self.stampaDatiStorici()
@@ -192,7 +279,7 @@ class Portafoglio:
             print(f"    {Fore.YELLOW}Volatilità Media Giornaliera{Fore.RESET}: \t{volatilitàGiornaliera:06.2%}")
             print(f"                           {Fore.YELLOW}Annua{Fore.RESET}: \t{volatilitàAnnua:06.2%}")
 
-    def calcolaStatsStoriche(self, verbose=1):
+    def calcolaStatsStoriche(self, verbose=0):
         """
         Calcola le statistiche aggregate del portafoglio basate sui pesi e sulle statistiche dei titoli.
         Include calcolo della matrice di covarianza, annualizzazione e rendimento da dividendi.

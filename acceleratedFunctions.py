@@ -112,9 +112,9 @@ def _calcolaStatsTitoli(nomi, rendimenti, dividendi, close):
 
 
 @njit
-def _calcolaCorrelazione(rendimenti):
+def _calcolaL(rendimenti):
     """
-    Calcola la matrice di correlazione tra i rendimenti dei titoli.
+    Calcola la matrice di correlazione tra i rendimenti dei titoli, da cui ricava la matrice di Cholesky.
     """
 
     n = rendimenti.shape[0]
@@ -126,19 +126,21 @@ def _calcolaCorrelazione(rendimenti):
                 corr_matrix[i, j] = np.corrcoef(rendimenti[i, mask], rendimenti[j, mask])[0, 1]
             else:
                 corr_matrix[i, j] = 0
-    return corr_matrix
+
+    L = np.linalg.cholesky(corr_matrix)
+
+    return L
 
 
 @njit(fastmath=True)
 def _simulaTitoli(
     Z,
+    anni,
     nSims,
-    orizzonte,
     drift: np.array,
     coeffDiffusione,
     S0,
     mediaDividendi,
-    dt,
 ):
     nAsset = drift.shape[0]
 
@@ -147,17 +149,17 @@ def _simulaTitoli(
     investimento = S0
 
     # Array per il valore degli asset in ogni simulazione e giorno
-    valoriTitoli = np.zeros((nSims, orizzonte, nAsset), dtype=np.float32)
+    valoriTitoli = np.zeros((nSims, anni * GIORNI_IN_UN_ANNO, nAsset), dtype=np.float32)
     valoriTitoli[:, 0, :] = S0
 
     # I dividendi sono trattati come flussi deterministici (non stocastici)
     # Rendimento giornaliero medio da dividendi per ogni asset
-    rendimentoDividendiGiornaliero = mediaDividendi * dt
+    rendimentoDividendiGiornaliero = mediaDividendi * (1 / GIORNI_IN_UN_ANNO)
 
     # Array per accumulare dividendi mensili (per asset)
     dividendiMensili = np.zeros((nSims, nAsset), dtype=np.float32)
 
-    for day in range(1, orizzonte):
+    for day in range(1, anni * GIORNI_IN_UN_ANNO):
         valoriTitoli[:, day, :] = valoriTitoli[:, day - 1, :] * np.exp(incrementiGiornalieri[:, day, :])
 
         # Calcola dividendi giornalieri come flusso deterministico
