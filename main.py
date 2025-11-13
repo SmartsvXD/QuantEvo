@@ -1,6 +1,6 @@
-import dataManager as dm
-import monteCarlo as mt
-import plt
+import src.dataManager as dm
+import src.monteCarlo as mt
+import src.plt as plt
 import json
 
 with open("titoli.json", "r") as file:
@@ -16,6 +16,6 @@ port = dm.Portafoglio(titoli, etf)
 
 sim = mt.MonteCarlo(etf, nSims=20000)
 sim.simulaTitoli(forzaElaborazione=0)
-pagella = sim.valutaPortafoglio(port, altro=0)
+pagella = sim.valutaPortafoglio(port, altro=1)
 
 plt.plot(pagella)

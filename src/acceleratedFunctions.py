@@ -1,6 +1,7 @@
 from numba import njit
 import numpy as np
-from settings import GIORNI_PER_MESE, ALIQUOTA_TASSE, GIORNI_IN_UN_ANNO, LAMBDA_EWMA
+from src.const import GIORNI_PER_MESE, ALIQUOTA_TASSE, GIORNI_IN_UN_ANNO
+from settings import LAMBDA_EWMA
 
 
 @njit

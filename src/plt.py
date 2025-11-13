@@ -1,14 +1,20 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from monteCarlo import Pagella
-from settings import GIORNI_IN_UN_ANNO
+from src.monteCarlo import Pagella
+from src.const import GIORNI_IN_UN_ANNO
+from colorama import Fore
 
 
+def plot(pagella: Pagella, figsize=(12, 6)):
+    if pagella.valoriPortafoglio is None:
+        print(
+            f"\n{Fore.RED}ATTENZIONE! Imposta {Fore.RESET}altro=1{Fore.RED} su {Fore.RESET}simulaTitoli{Fore.RED} per permettere il plot!{Fore.RESET}"
+        )
+        return
 
-def plot( pagella: Pagella, figsize=(12, 6)):
     plt.figure(figsize=figsize)
     plt.xlabel("Anni")
-    
+
     # plot di alcune traiettorie a caso (per leggibilità)
     for i in np.random.choice(pagella.nSims, size=50, replace=False):
         plt.plot(

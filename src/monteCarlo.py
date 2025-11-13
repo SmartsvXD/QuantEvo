@@ -1,8 +1,8 @@
-from settings import GIORNI_IN_UN_ANNO
+from src.const import GIORNI_IN_UN_ANNO
 from colorama import Fore
-from dataManager import Portafoglio, Titoli
+from src.dataManager import Portafoglio, Titoli
 import numpy as np
-from acceleratedFunctions import _simulaTitoli
+from src.acceleratedFunctions import _simulaTitoli
 import time
 import os
 import pickle as pk

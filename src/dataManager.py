@@ -1,8 +1,8 @@
-from settings import GIORNI_IN_UN_ANNO
+from src.const import GIORNI_IN_UN_ANNO
 from colorama import Fore
 import yfinance as yf
 import numpy as np
-from acceleratedFunctions import _calcolaStatsTitoli, _calcolaL
+from src.acceleratedFunctions import _calcolaStatsTitoli, _calcolaL
 import os
 import pickle as pk
 import datetime as dt
