@@ -2,11 +2,13 @@ from src.const import GIORNI_IN_UN_ANNO
 from colorama import Fore
 import yfinance as yf
 import numpy as np
-from src.schiavi import _calcolaStatsTitoli, _calcolaL
+from src.acceleratedFunctions import _calcolaStatsTitoli, _calcolaStatsTitoliGradiente, _calcolaL
 import os
 import pickle as pk
 import datetime as dt
 import time
+import json
+import src.parametri as p
 
 
 class Stats:
@@ -14,6 +16,18 @@ class Stats:
     Classe che contiene le statistiche finanziarie per titoli o portafogli.
     Memorizza dati come rendimenti, volatilità, dividendi e parametri per il modello GBM.
     """
+
+    __slots__ = (
+        "nomi",
+        "rendimentoGiornaliero",
+        "volatilitàGiornaliera",
+        "rendimentoAnnuo",
+        "volatilitàAnnua",
+        "rendimentoGiornalieroDividendi",
+        "rendimentoAnnuoDividendi",
+        "volatilitàDividendi",
+        "L",
+    )
 
     def __init__(self):
         self.nomi = []
@@ -34,12 +48,10 @@ class Titoli:
     e calcolando statistiche storiche per ciascun asset.
     """
 
-    def __init__(self, nomi):
+    def __init__(self):
         self.stats = Stats()
-        self.stats.nomi = nomi
-
-        self.download = 0
-        self.elaborazione = 0
+        with open("titoli.json", "r") as file:
+            self.stats.nomi = json.load(file)
 
     def downloadYFinance(self, forzaDownload=1):
         """
@@ -48,7 +60,6 @@ class Titoli:
         """
         t0 = time.time()
 
-        self.download = 0
         if not (os.path.exists("./data/titoli.data")) or forzaDownload:
             self.download = 1
         else:
@@ -148,69 +159,70 @@ class Titoli:
                 f"        {Fore.YELLOW}Rendimento da Dividendi{Fore.RESET}: \t{self.stats.rendimentoAnnuoDividendi[i]:06.2%}"
             )
 
-    def calcolaStatsStoriche(self, origine="yfinance", forzaDownload=1, forzaElaborazione=1, verbose=0):
+    def calcolaStatsStoriche(self, origine="yfinance", forzaDownload=1, verbose=0, lambdaEWMA=None):
         """
         Calcola le statistiche storiche per ciascun componente utilizzando la funzione accelerata.
         Include rendimenti, volatilità e rendimento da dividendi, e opzionalmente stampa i risultati.
         """
+
         if origine == "yfinance":
             rendimenti, dividendi, close = self.downloadYFinance(forzaDownload=forzaDownload)
+
+        if lambdaEWMA is None:
+            lambdaEWMA = p.ottieniLambdaEWMA(self.stats.nomi)
+
+        # Ensure lambdaEWMA is a numpy array of floats for numba-accelerated functions
+        lambdaEWMA = np.array(lambdaEWMA, dtype=np.float64)
 
         t0 = time.time()
 
         print()
-        if forzaElaborazione or self.download or not (os.path.exists("./data/stats.data")):
-            self.elaborazione = 1
+        print(f"{Fore.MAGENTA}Elaborazione delle stats storiche dei titoli...{Fore.RESET}")
 
-            print(f"{Fore.MAGENTA}Elaborazione delle stats storiche dei titoli...{Fore.RESET}")
+        (
+            self.stats.rendimentoGiornaliero,
+            self.stats.volatilitàGiornaliera,
+            self.stats.rendimentoAnnuo,
+            self.stats.volatilitàAnnua,
+            self.stats.rendimentoAnnuoDividendi,
+            self.stats.rendimentoGiornalieroDividendi,
+            self.stats.volatilitàDividendi,
+        ) = _calcolaStatsTitoli(self.stats.nomi, rendimenti, dividendi, close, lambdaEWMA)
 
-            (
-                self.stats.rendimentoGiornaliero,
-                self.stats.volatilitàGiornaliera,
-                self.stats.rendimentoAnnuo,
-                self.stats.volatilitàAnnua,
-                self.stats.rendimentoAnnuoDividendi,
-                self.stats.rendimentoGiornalieroDividendi,
-                self.stats.volatilitàDividendi,
-            ) = _calcolaStatsTitoli(self.stats.nomi, rendimenti, dividendi, close)
-
-            self.L = _calcolaL(rendimenti)
-
-            data = {
-                "rendimentoGiornaliero": self.stats.rendimentoGiornaliero,
-                "volatilitàGiornaliera": self.stats.volatilitàGiornaliera,
-                "rendimentoAnnuo": self.stats.rendimentoAnnuo,
-                "volatilitàAnnua": self.stats.volatilitàAnnua,
-                "rendimentoAnnuoDividendi": self.stats.rendimentoAnnuoDividendi,
-                "rendimentoGiornalieroDividendi": self.stats.rendimentoGiornalieroDividendi,
-                "volatilitàDividendi": self.stats.volatilitàDividendi,
-                "L": self.L,
-            }
-
-            print(f"{Fore.MAGENTA}Salvando i dati in {Fore.RESET}./data/stats.data{Fore.MAGENTA}...{Fore.RESET}")
-            with open("./data/stats.data", "wb") as file:
-                pk.dump(data, file)
-        else:
-            self.elaborazione = 0
-
-            print(f"{Fore.MAGENTA}Caricando i dati da {Fore.RESET}./data/stats.data{Fore.MAGENTA}...{Fore.RESET}")
-            with open("./data/stats.data", "rb") as file:
-                data = pk.load(file)
-
-            self.stats.rendimentoGiornaliero = data["rendimentoGiornaliero"]
-            self.stats.volatilitàGiornaliera = data["volatilitàGiornaliera"]
-            self.stats.rendimentoAnnuo = data["rendimentoAnnuo"]
-            self.stats.volatilitàAnnua = data["volatilitàAnnua"]
-            self.stats.rendimentoAnnuoDividendi = data["rendimentoAnnuoDividendi"]
-            self.stats.rendimentoGiornalieroDividendi = data["rendimentoGiornalieroDividendi"]
-            self.stats.volatilitàDividendi = data["volatilitàDividendi"]
-            self.L = data["L"]
+        # Calcola matrice di Cholesky basata sulla CORRELAZIONE, poi scala con volatilità EWMA
+        # Questo assicura che i dati simulati abbiano la volatilità EWMA desiderata
+        self.stats.L = _calcolaL(np.array(rendimenti))
 
         statsTime = time.time() - t0
         print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({statsTime:.2f}s)")
 
         if verbose:
             self.stampaDatiStorici()
+
+    def calcolaStatsStoricheGradiente(self, giorni, origine="yfinance", forzaDownload=1, lambdaEWMA=None):
+        if origine == "yfinance":
+            rendimenti, dividendi, close = self.downloadYFinance(forzaDownload=forzaDownload)
+
+        print()
+        print(f"{Fore.MAGENTA}Elaborazione delle stats storiche dei titoli...{Fore.RESET}")
+        t0 = time.time()
+
+        # Prepare lambdaEWMA array: accept a sequence or None
+        if lambdaEWMA is None:
+            lambdaEWMA = np.array(p.ottieniLambdaEWMA(self.stats.nomi), dtype=np.float64)
+        else:
+            lambdaEWMA = np.array(lambdaEWMA, dtype=np.float64)
+
+        data = _calcolaStatsTitoliGradiente(self.stats.nomi, rendimenti, dividendi, close, lambdaEWMA, giorni)
+
+        # Calcola anche la matrice L (Cholesky) per la correlazione, come nella versione non-gradiente
+        L = _calcolaL(np.array(rendimenti))
+
+        statsTime = time.time() - t0
+        print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({statsTime:.2f}s)")
+
+        # data è una tuple con 7 elementi; restituiamo anche L alla fine per compatibilità col test
+        return (*data, L)
 
 
 class Portafoglio:

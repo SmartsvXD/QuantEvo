@@ -2,3 +2,5 @@ colorama
 yfinance
 numba
 matplotlib
+optuna
+scipy

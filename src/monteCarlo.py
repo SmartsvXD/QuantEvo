@@ -1,11 +1,9 @@
 from src.const import GIORNI_IN_UN_ANNO
 from colorama import Fore
-from src.dataManager import Portafoglio, Titoli
+from src.dataManager import Portafoglio, Stats
 import numpy as np
-from src.schiavi import _simulaTitoli
+from src.acceleratedFunctions import _simulaTitoli
 import time
-import os
-import pickle as pk
 
 
 class Pagella:
@@ -32,85 +30,85 @@ class Pagella:
 
 
 class MonteCarlo:
-    def __init__(self, titoli: Titoli, S0=1.0, ribilancio=1.0, anni=1, nSims=20000):
+    def __init__(self, S0=1.0, ribilancio=1.0, anni=1):
         self.S0 = S0
         self.ribilancio = ribilancio
         self.anni = anni
-        self.nSims = nSims
-        self.titoli = titoli
 
-    def simulaTitoli(self, forzaElaborazione=1, verbose=0):
-        t0 = time.time()
+    def simulaTitoli(self, statsTitoli: Stats, nSims=20000, verbose=0):
+        if verbose == 1:
+            t0 = time.time()
 
-        print()
-        if forzaElaborazione or not (os.path.exists("./data/sim.data")) or self.titoli.download:
+            print()
             print(f"{Fore.MAGENTA}Elaborazione della simulazione dei titoli...{Fore.RESET}")
 
-            # Il drift del GBM per log-rendimenti è: (μ - 0.5σ²)dt
-            drift = (self.titoli.stats.rendimentoAnnuo - 0.5 * self.titoli.stats.volatilitàAnnua**2) / GIORNI_IN_UN_ANNO
+        # GBM con correzione di Itô:
+        # dS_t / S_t = μ * dt + σ * dW_t
+        # In forma discreta: ln(S_t) = ln(S_{t-1}) + (μ - σ²/2) * dt + σ * sqrt(dt) * Z
 
-            coeffDiffusione = self.titoli.stats.volatilitàAnnua * np.sqrt(1 / GIORNI_IN_UN_ANNO)
+        # Drift: rendimento medio giornaliero del PREZZO (senza dividendi qui)
+        # I dividendi verranno trattati separatamente come flusso di cassa
+        drift_price = statsTitoli.rendimentoGiornaliero
 
-            L = self.titoli.L
+        # Volatilità giornaliera
+        volatility = statsTitoli.volatilitàGiornaliera
 
-            # Genera rumore indipendente
-            # Nota: usiamo un solo array e scriviamo il risultato della correlazione nello
-            # stesso buffer per evitare la copia temporanea (Z_ind -> Z) che raddoppia il picco memoria.
-            Z = np.random.randn(self.nSims, self.anni * GIORNI_IN_UN_ANNO, len(self.titoli.stats.nomi))
-            # Applica correlazione usando decomposizione di Cholesky e scrive il risultato nello stesso array
-            # (riduce il picco di memoria temporanea)
-            np.einsum("ijk,kl->ijl", Z, L, out=Z)
+        # Matrice di Cholesky per correlazione
+        L = statsTitoli.L
 
-            (self.investimento, self.valoriTitoli) = _simulaTitoli(
-                Z,
-                self.anni,
-                self.nSims,
-                drift,
-                coeffDiffusione,
-                self.S0,
-                self.titoli.stats.rendimentoGiornalieroDividendi,
-            )
+        # Genera rumore gaussiano standardizzato N(0, 1)
+        Z = np.random.randn(nSims, self.anni * GIORNI_IN_UN_ANNO, len(statsTitoli.nomi))
 
-            print(f"{Fore.MAGENTA}Salvando i dati in {Fore.RESET}./data/sim.data{Fore.MAGENTA}...")
+        # Applica correlazione: Z_corr = Z @ L.T
+        # L è la matrice di Cholesky della matrice di CORRELAZIONE
+        Z_shape = Z.shape
+        Z_reshaped = Z.reshape(-1, Z_shape[-1])  # (nSims * nGiorni, nAsset)
+        Z_correlated = Z_reshaped @ L.T  # Applica correlazione
+        Z = Z_correlated.reshape(Z_shape)  # Ripristina forma
 
-            data = {
-                "investimento": self.investimento,
-                "valoriTitoli": self.valoriTitoli,
-            }
+        # Esegui simulazione
+        (self.investimento, self.valoriTitoli) = _simulaTitoli(
+            Z,
+            self.anni,
+            nSims,
+            drift_price,
+            volatility,
+            self.S0,
+            statsTitoli.rendimentoGiornalieroDividendi,
+        )
+        self.nSims = nSims
 
-            with open("./data/sim.data", "wb") as file:
-                pk.dump(data, file)
+        if verbose == 1:
+            simTime = time.time() - t0
+            print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({simTime:.2f}s)")
 
-        else:
-            print(
-                f"{Fore.RED}ATTENZIONE! Caricare i dati della simulazione dei titoli è altamente sconsigliato!{Fore.RESET}"
-            )
-            print(f"{Fore.MAGENTA}Caricando i dati da {Fore.RESET}./data/sim.data{Fore.MAGENTA}...")
+        mediana = np.zeros(len(statsTitoli.nomi))
 
-            with open("./data/sim.data", "rb") as file:
-                data = pk.load(file)
+        for i in range(len(statsTitoli.nomi)):
+            mediana[i] = (np.median(self.valoriTitoli[:, -1, i]) / self.investimento) - 1
 
-            self.investimento = data["investimento"]
-            self.valoriTitoli = data["valoriTitoli"]
-
-        simTime = time.time() - t0
-        print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({simTime:.2f}s)")
-
-        if verbose:
+        if verbose == 2:
             print(f"\n{Fore.MAGENTA}Performance dei Titoli{Fore.RESET}:")
-            for i, nome in enumerate(self.titoli.stats.nomi):
-                mediana = (np.median(self.valoriTitoli[:, -1, i]) / self.investimento) - 1
-
+            for i, nome in enumerate(statsTitoli.nomi):
                 print(f"    {Fore.GREEN}{nome}{Fore.RESET}: ")
-                print(f"        {Fore.YELLOW}Mediana{Fore.RESET}: {mediana:.2%}")
+                print(f"        {Fore.YELLOW}Mediana{Fore.RESET}: {mediana[i]:.2%}")
+
+        return mediana
 
     def valutaPortafoglio(self, portafoglio: Portafoglio, altro=0, verbose=1):
+        # Estrai i valori dei titoli nel portafoglio
         valoriPortafoglioTitoli = self.valoriTitoli[:, :, portafoglio.indiciTitoli]
+
+        # Applica i pesi: ogni titolo contribuisce con il suo peso al portafoglio
         valoriPortafoglioPesati = valoriPortafoglioTitoli * portafoglio.pesi[np.newaxis, np.newaxis, :]
+
+        # Somma i contributi pesati per ottenere il valore totale del portafoglio
         valoriPortafoglio = np.sum(valoriPortafoglioPesati, axis=2)
 
-        # Prende il valore finale (ultimo giorno) per tutte le simulazioni
-        crescitaPortafoglio = valoriPortafoglio[:, -1] - 1
+        # Calcola il rendimento: (valore_finale - valore_iniziale) / valore_iniziale
+        # valore_iniziale è S0 (già implicito nei valoriTitoli come S0 al day 0)
+        # Ma valoriPortafoglio è già un valore, perciò: rendimento = valoriPortafoglio[:, -1] / S0 - 1
+        crescitaPortafoglio = (valoriPortafoglio[:, -1] / self.S0) - 1
 
         mediana = np.median(crescitaPortafoglio)
         media = np.mean(crescitaPortafoglio)
@@ -134,7 +132,9 @@ class MonteCarlo:
         pagella.crescitaPortafoglio = crescitaPortafoglio
         if altro:
             pagella.valoriPortafoglio = valoriPortafoglio.astype(np.float32)
-        pagella.valoriInvestimenti = np.array([self.S0] * self.anni * GIORNI_IN_UN_ANNO)
+        # valoriInvestimenti: traccia il valore dell'investimento iniziale nel tempo (baseline per confronto)
+        # Se non ribilanciato, è semplicemente una linea orizzontale a S0
+        pagella.valoriInvestimenti = np.full(self.anni * GIORNI_IN_UN_ANNO, self.S0, dtype=np.float32)
 
         pagella.media = media
         pagella.mediana = mediana

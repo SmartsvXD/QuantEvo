@@ -1,6 +1,5 @@
 __pycache__
 test.py
 .DS_Store
-titoli.json
+*.json
 *.data
-inspect_memory.py

@@ -1,1 +1,0 @@
-LAMBDA_EWMA = 0.97
