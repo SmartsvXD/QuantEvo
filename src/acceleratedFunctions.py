@@ -1,4 +1,5 @@
-from numba import njit
+from numba import njit, prange, set_num_threads
+import os
 import numpy as np
 from src.const import GIORNI_IN_UN_ANNO
 
@@ -60,7 +61,7 @@ def _ewma_variance(data, lambdaEWMA):
     return variance
 
 
-@njit
+@njit(parallel=True)
 def _calcolaStatsTitoli(nomi, rendimenti, dividendi, close, lambdaEWMA):
     """
     Calcola statistiche storiche per ciascun componente del portafoglio.
@@ -90,7 +91,7 @@ def _calcolaStatsTitoli(nomi, rendimenti, dividendi, close, lambdaEWMA):
     volatilitàDividendi = np.zeros(nBeni)
 
     # Ciclo su ciascun bene per calcolare le statistiche individuali
-    for i in range(nBeni):
+    for i in prange(nBeni):
         # Calcola la media dei log-returns giornalieri con EWMA (drift giornaliero)
         rendimentoGiornaliero[i] = _ewma_mean(rendimenti[i], lambdaEWMA[i])
 
@@ -145,7 +146,7 @@ def _calcolaStatsTitoli(nomi, rendimenti, dividendi, close, lambdaEWMA):
     )
 
 
-@njit
+@njit(parallel=True)
 def _calcolaStatsTitoliGradiente(nomi, rendimenti, dividendi, close, lambdaEWMA, giorni):
     if giorni <= 0:
         return
@@ -182,7 +183,7 @@ def _calcolaStatsTitoliGradiente(nomi, rendimenti, dividendi, close, lambdaEWMA,
     rendimentoAnnoSuccessivo = np.zeros((giorni, nBeni))
 
     # Ciclo su ciascun bene per calcolare le statistiche individuali
-    for i in range(giorni):
+    for i in prange(giorni):
         for j in range(nBeni):
             # Evita slice vuote: se il taglio rende una slice di lunghezza 0 o negativa,
             # usiamo l'intera serie come fallback per avere almeno dei dati.
@@ -270,7 +271,7 @@ def _calcolaStatsTitoliGradiente(nomi, rendimenti, dividendi, close, lambdaEWMA,
     )
 
 
-@njit
+@njit(parallel=True)
 def _calcolaL(rendimenti):
     """
     Calcola la matrice di Cholesky della matrice di CORRELAZIONE.
@@ -286,7 +287,7 @@ def _calcolaL(rendimenti):
     cov_matrix = np.zeros((n, n))
 
     # Passo 1: Calcola la covarianza empirica
-    for i in range(n):
+    for i in prange(n):
         for j in range(n):
             mask = ~(np.isnan(rendimenti[i]) | np.isnan(rendimenti[j]))
             valid_count = np.sum(mask)
@@ -328,15 +329,9 @@ def _calcolaL(rendimenti):
     return L
 
 
-@njit(fastmath=True)
+@njit(parallel=True, fastmath=True)
 def _simulaTitoli(
-    Z_standard,
-    anni,
-    nSims,
-    drift_price: np.array,
-    coeffDiffusione,
-    S0,
-    dividend_yield,
+    Z, nDays, nSims, drift_price: np.array, coeffDiffusione, S0, dividend_yield, day0=0, valoriTitoli=None
 ):
     """
     Simula il percorso di prezzo degli asset usando GBM con correzione di Itô.
@@ -357,26 +352,43 @@ def _simulaTitoli(
     La volatilità viene applicata qui moltiplicando per coeffDiffusione.
     """
     nAsset = drift_price.shape[0]
-    nDays = anni * GIORNI_IN_UN_ANNO
 
     # Array per il valore degli asset
-    valoriTitoli = np.zeros((nSims, nDays, nAsset), dtype=np.float32)
-    valoriTitoli[:, 0, :] = S0
+    if valoriTitoli is None:
+        valoriTitoli = np.zeros((nSims, nDays, nAsset), dtype=np.float64)
+        valoriTitoli[:, 0, :] = S0
 
     # Drift totale include price appreciation + dividendi
     # Ma per il processo dei PREZZI, usiamo solo price drift
     # I dividendi saranno aggiunti come flusso di cassa separato nel calcolo del total return
     drift_adj = drift_price - 0.5 * coeffDiffusione * coeffDiffusione  # Correzione di Itô
 
-    # Simula il percorso giornaliero
-    for day in range(1, nDays):
-        # Rumore scalato per volatilità: σ * Z_t (Z già correlato)
-        noise = coeffDiffusione[np.newaxis, :] * Z_standard[:, day, :]
+    # Simula il percorso giornaliero sui blocchi passati in Z_standard.
+    # Z_standard ha shape (nSims, blockDays, nAsset). Usiamo day_offset per iterare
+    # all'interno del blocco e mappare al giorno globale day = day0 + day_offset.
+    blockDays = Z.shape[1]
 
-        # Log-return giornaliero = drift corretto + rumore
-        log_returns = drift_adj[np.newaxis, :] + noise
+    # Parallelizziamo sulla dimensione delle simulazioni: ogni simulazione è indipendente
+    for sim in prange(nSims):
+        for day_offset in range(blockDays):
+            day = day0 + day_offset
+            for asset in range(nAsset):
+                # Se siamo al primo giorno assoluto e il valore non è inizializzato,
+                # impostiamo S0 (caso day == 0). Altrimenti usiamo il precedente giorno.
+                if day == 0:
+                    # Se valore già presente (da array fornito), lo preserviamo
+                    if valoriTitoli is None:
+                        prev = S0
+                    else:
+                        prev = valoriTitoli[sim, 0, asset]
+                    # usa prev come valore iniziale e poi applica rumore per giorni successivi
+                    valoriTitoli[sim, 0, asset] = prev
+                else:
+                    noise = coeffDiffusione[asset] * Z[sim, day_offset, asset]
+                    log_return = drift_adj[asset] + noise
+                    valoriTitoli[sim, day, asset] = valoriTitoli[sim, day - 1, asset] * np.exp(log_return)
 
-        # Aggiorna il prezzo: S_t = S_{t-1} * exp(log_return)
-        valoriTitoli[:, day, :] = valoriTitoli[:, day - 1, :] * np.exp(log_returns)
+    return valoriTitoli
 
-    return S0, valoriTitoli
+
+set_num_threads(os.cpu_count())

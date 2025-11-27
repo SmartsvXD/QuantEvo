@@ -36,7 +36,7 @@ class MonteCarlo:
         self.anni = anni
 
     def simulaTitoli(self, statsTitoli: Stats, nSims=20000, verbose=0):
-        if verbose == 1:
+        if verbose >= 1:
             t0 = time.time()
 
             print()
@@ -56,36 +56,46 @@ class MonteCarlo:
         # Matrice di Cholesky per correlazione
         L = statsTitoli.L
 
+        nDays = self.anni * GIORNI_IN_UN_ANNO
+        nTitoli = len(statsTitoli.nomi)
+
+        self.valoriTitoli = np.zeros((nSims, nDays, nTitoli), dtype=np.float64)
+        self.valoriTitoli[:, 0, :] = self.S0
+
         # Genera rumore gaussiano standardizzato N(0, 1)
-        Z = np.random.randn(nSims, self.anni * GIORNI_IN_UN_ANNO, len(statsTitoli.nomi))
+        np.random.seed(49)
+        for giorno in range(0, self.anni * GIORNI_IN_UN_ANNO, 36):
+            Z = np.random.randn(nSims, 36, len(statsTitoli.nomi))
 
-        # Applica correlazione: Z_corr = Z @ L.T
-        # L è la matrice di Cholesky della matrice di CORRELAZIONE
-        Z_shape = Z.shape
-        Z_reshaped = Z.reshape(-1, Z_shape[-1])  # (nSims * nGiorni, nAsset)
-        Z_correlated = Z_reshaped @ L.T  # Applica correlazione
-        Z = Z_correlated.reshape(Z_shape)  # Ripristina forma
+            # Applica correlazione: Z_corr = Z @ L.T
+            # L è la matrice di Cholesky della matrice di CORRELAZIONE
+            Z_shape = Z.shape
+            Z_reshaped = Z.reshape(-1, Z_shape[-1])  # (nSims * nGiorni, nAsset)
+            Z_correlated = Z_reshaped @ L.T  # Applica correlazione
+            Z = Z_correlated.reshape(Z_shape)  # Ripristina forma
 
-        # Esegui simulazione
-        (self.investimento, self.valoriTitoli) = _simulaTitoli(
-            Z,
-            self.anni,
-            nSims,
-            drift_price,
-            volatility,
-            self.S0,
-            statsTitoli.rendimentoGiornalieroDividendi,
-        )
-        self.nSims = nSims
+            # Esegui simulazione
+            self.valoriTitoli = _simulaTitoli(
+                Z,
+                nDays,
+                nSims,
+                drift_price,
+                volatility,
+                self.S0,
+                statsTitoli.rendimentoGiornalieroDividendi,
+                day0=giorno,
+                valoriTitoli=self.valoriTitoli,
+            )
+            self.nSims = nSims
 
-        if verbose == 1:
+        if verbose >= 1:
             simTime = time.time() - t0
             print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({simTime:.2f}s)")
 
         mediana = np.zeros(len(statsTitoli.nomi))
 
         for i in range(len(statsTitoli.nomi)):
-            mediana[i] = (np.median(self.valoriTitoli[:, -1, i]) / self.investimento) - 1
+            mediana[i] = (np.median(self.valoriTitoli[:, -1, i]) / self.S0) - 1
 
         if verbose == 2:
             print(f"\n{Fore.MAGENTA}Performance dei Titoli{Fore.RESET}:")

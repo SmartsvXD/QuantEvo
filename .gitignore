@@ -3,3 +3,4 @@ test.py
 .DS_Store
 *.json
 *.data
+*.txt

@@ -12,7 +12,7 @@ if __name__ == "__main__":
     # port.calcolaStatsStoriche(verbose=0)
 
     sim = mt.MonteCarlo()
-    sim.simulaTitoli(etf.stats, nSims=20000, verbose=0)
+    sim.simulaTitoli(etf.stats, nSims=20000, verbose=1)
     pagella = sim.valutaPortafoglio(port, verbose=1, altro=1)
 
     plt.plot(pagella)

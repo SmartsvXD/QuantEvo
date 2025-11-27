@@ -85,6 +85,10 @@ class Titoli:
                 auto_adjust=False,
                 actions=True,  # per dividendi e split
             )
+            
+            if data['Close'].shape[1] != len(self.stats.nomi):
+                print(f"{Fore.RED}ERRORE! Impossibile scaricare i dati su tutti i titoli richiesti.")
+                exit()
 
             # Estrae le serie principali: prezzi di chiusura e dividendi
             close = data["Close"]
