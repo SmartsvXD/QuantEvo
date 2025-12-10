@@ -1,18 +1,23 @@
-import src.dataManager as dm
-import src.monteCarlo as mt
+import src.managerTitoli as titoli
+import src.simulazione as sim
 import src.plt as plt
+import json
 
-titoli = {"SPY": 0.5, "EFA": 0.3, "AGG": 0.2}
+portafoglio = {"SPY": 0.5, "EFA": 0.3, "AGG": 0.2}
 
 if __name__ == "__main__":
-    etf = dm.Titoli()
-    etf.calcolaStatsStoriche()
+    with open("./titoli.json", "r") as file:
+        nomiTitoli = json.load(file)
 
-    port = dm.Portafoglio(titoli, etf)
-    # port.calcolaStatsStoriche(verbose=0)
+    with open("./data/lambdaEWMA.json", "r") as file:
+        lambdaEWMA = json.load(file)
 
-    sim = mt.MonteCarlo()
-    sim.simulaTitoli(etf.stats, nSims=20000, verbose=1)
-    pagella = sim.valutaPortafoglio(port, verbose=1, altro=1)
+    storico = titoli.download(nomiTitoli, forzaDownload=0)
 
-    plt.plot(pagella)
+    statsStoriche = titoli.calcolaStatsStoriche(storico, [lambdaEWMA[titolo] for titolo in nomiTitoli])
+
+    risultati = sim.simulaTitoli(statsStoriche, noise="skewt")
+
+    pagella = sim.valutaPortafoglio(portafoglio, risultati)
+
+    plt.plot(portafoglio, risultati)

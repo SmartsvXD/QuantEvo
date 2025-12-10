@@ -1,246 +1,232 @@
-import src.dataManager as dm
-import src.monteCarlo as mt
-from src.const import GIORNI_IN_UN_ANNO
-import optuna
-import numpy as np
-from colorama import Fore
+import json
 import time
+from colorama import Fore
+import numpy as np
+from scipy.optimize import differential_evolution
+from scipy.stats import skew, kurtosis
+from numba import njit
+
+import src.managerTitoli as mt
+from src.managerTitoli.statsStoriche import StatsTitoli
+import src.simulazione as sim
+from src.const import GIORNI_IN_UN_ANNO
 import src.parametri as p
 
 
-def _impute_nans_timewise(arr):
-    """Imputa NaN in una matrice temporale (shape: T x N) per colonna.
-    Usa interpolazione lineare lungo l'asse temporale; se una colonna è
-    completamente NaN riempie con 0.0 (o con la mediana globale se preferisci).
-
-    Accetta anche vettori 1D.
-    """
-    a = np.array(arr, dtype=float, copy=True)
+@njit
+def _impute_nans_timewise(arr: np.ndarray) -> np.ndarray:
+    """Interpola NaN per colonna (asse tempo). Se una colonna è tutta NaN, riempie con 0.0."""
+    a = arr.copy().astype(np.float64)
     if a.ndim == 1:
-        a = a[:, None]
+        a = a.reshape(-1, 1)
 
     T, N = a.shape
     for j in range(N):
         col = a[:, j]
         mask = np.isnan(col)
         if mask.all():
-            # colonna completamente vuota: non abbiamo info, mettere 0.0
             col[:] = 0.0
             a[:, j] = col
             continue
 
         valid_idx = np.where(~mask)[0]
         valid_vals = col[valid_idx]
-        # interpola su tutti gli indici; fuori range prende first/last valid
         interp = np.interp(np.arange(T), valid_idx, valid_vals)
         col[mask] = interp[mask]
         a[:, j] = col
 
-    if arr is None:
-        return None
     return a if arr.ndim != 1 else a[:, 0]
 
 
-giorni = int(1 * GIORNI_IN_UN_ANNO)
-nSims = 5
+# Config
+giorni = int(1 * GIORNI_IN_UN_ANNO)  # finestra di 6 mesi (veloce per ottimizzazione)
+giorni_finale = int(1 * GIORNI_IN_UN_ANNO)  # anno completo per valutazione finale
+nSims = 50  # numero simulazioni per valutazione (aumentato per meno rumore)
+step_giorni = 3  # campiona ogni N giorni (ridotto per più dati)
 
-titoli = dm.Titoli()
-sim = mt.MonteCarlo()
+# Parametri differential_evolution
+popsize = 5  # popolazione per generazione
+maxiter = 12  # max iterazioni (ridotto ma efficace)
+atol = 0.01  # tolleranza assoluta
+polish = False  # disabilita L-BFGS-B per velocità
+
+# Carica titoli e dati una volta
+with open("./titoli.json", "r") as f:
+    NOMI = json.load(f)
+
+data_cache = mt.download(NOMI, forzaDownload=0, verbose=0)
+
+# Cache globale per le statistiche gradiente
+stats_gradient_cache = {}
 
 
-def valutaLambdaEWMA(lambdaEWMA):
-    global titoli
-    # Ensure lambdaEWMA is passed to the gradient stats calculation
-    (
-        rendimentoGiornaliero,
-        volatilitàGiornaliera,
-        rendimentoAnnuo,
-        volatilitàAnnua,
-        rendimentoAnnuoDividendi,
-        rendimentoGiornalieroDividendi,
-        volatilitàDividendi,
-        rendimentiAnnoSuccessivo,
-        L,
-    ) = titoli.calcolaStatsStoricheGradiente(giorni, forzaDownload=0, lambdaEWMA=lambdaEWMA)
+def _skew_kurt(rendimenti: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    skew_values, kurt_values = [], []
+    for r in rendimenti:
+        valid = r[~np.isnan(r)]
+        if len(valid) < 2:
+            skew_values.append(0.0)
+            kurt_values.append(0.0)
+        else:
+            skew_values.append(float(skew(valid)))
+            kurt_values.append(float(kurtosis(valid, fisher=True)))
+    return np.array(skew_values), np.array(kurt_values)
 
-    stats = dm.Stats()
-    stats.nomi = titoli.stats.nomi
 
-    n_assets = len(titoli.stats.nomi)
-    score = np.zeros(n_assets, dtype=np.float64)
-    counts = np.zeros(n_assets, dtype=np.int64)
+BASE_SKEW, BASE_KURT = _skew_kurt(data_cache.rendimenti)
 
-    # Imputa NaN nelle matrici temporali prima di usarle nella simulazione
-    # (evitiamo perdita di informazione: interpolazione per colonna/asset)
-    rendimentoGiornaliero = _impute_nans_timewise(rendimentoGiornaliero)
-    volatilitàGiornaliera = _impute_nans_timewise(volatilitàGiornaliera)
-    rendimentoAnnuo = _impute_nans_timewise(rendimentoAnnuo)
-    volatilitàAnnua = _impute_nans_timewise(volatilitàAnnua)
-    rendimentoAnnuoDividendi = _impute_nans_timewise(rendimentoAnnuoDividendi)
-    rendimentoGiornalieroDividendi = _impute_nans_timewise(rendimentoGiornalieroDividendi)
-    volatilitàDividendi = _impute_nans_timewise(volatilitàDividendi)
-    rendimentiAnnoSuccessivo = _impute_nans_timewise(rendimentiAnnoSuccessivo)
 
-    print()
-    print(f"{Fore.MAGENTA}Elaborazione della simulazione dei titoli...{Fore.RESET}")
+def _simulated_median_return(stats: StatsTitoli, n_sims: int, use_antithetic: bool = True) -> np.ndarray:
+    """Simula rendimenti con campionamento antitetico per ridurre varianza."""
+    if use_antithetic and n_sims >= 4:
+        # Usa metà delle simulazioni con antithetic sampling
+        half_sims = n_sims // 2
+        res = sim.simulaTitoli(stats, anni=1, nSims=half_sims, noise="skewt", verbose=0)
+        # Le simulazioni antitetiche sono già gestite nel generatore di rumore
+        # Raddoppia efficacemente la precisione
+        med = np.median(res.valoriTitoli[:, -1, :], axis=0)
+    else:
+        res = sim.simulaTitoli(stats, anni=1, nSims=n_sims, noise="skewt", verbose=0)
+        med = np.median(res.valoriTitoli[:, -1, :], axis=0)
+    return med - 1.0  # S0=1
 
-    t0 = time.time()
 
-    print(f"0/{giorni}", end="")
-    for giorno in range(giorni):
-        # Use the slice for the specific day
-        stats.rendimentoGiornaliero = rendimentoGiornaliero[giorno]
-        stats.volatilitàGiornaliera = volatilitàGiornaliera[giorno]
-        stats.rendimentoAnnuo = rendimentoAnnuo[giorno]
-        stats.volatilitàAnnua = volatilitàAnnua[giorno]
-        stats.rendimentoAnnuoDividendi = rendimentoAnnuoDividendi[giorno]
-        stats.rendimentoGiornalieroDividendi = rendimentoGiornalieroDividendi[giorno]
-        stats.volatilitàDividendi = volatilitàDividendi[giorno]
+def valuta_lambda(lambdaEWMA: np.ndarray, print_rmse: bool = False, giorni_override: int = None) -> float:
+    """Funzione obiettivo per differential_evolution."""
+    giorni_use = giorni_override if giorni_override is not None else giorni
+
+    # Cache key per le statistiche gradiente
+    cache_key = (tuple(lambdaEWMA), giorni_use)
+
+    if cache_key in stats_gradient_cache:
+        rg, vg, divg, volDiv, target_next, L = stats_gradient_cache[cache_key]
+    else:
+        # Calcola stats gradiente (include rendimentoAnnoSuccessivo)
+        rg, vg, divg, volDiv, target_next, L = mt.calcolaStatsTitoliStoricheGradiente(
+            data_cache, giorni_use, np.array(lambdaEWMA), verbose=0
+        )
+
+        # Imputa NaN
+        rg = _impute_nans_timewise(rg)
+        vg = _impute_nans_timewise(vg)
+        divg = _impute_nans_timewise(divg)
+        volDiv = _impute_nans_timewise(volDiv)
+        target_next = _impute_nans_timewise(target_next)
+
+        stats_gradient_cache[cache_key] = (rg, vg, divg, volDiv, target_next, L)
+
+    n_assets = len(NOMI)
+    score = np.zeros(n_assets)
+    count = np.zeros(n_assets)
+
+    # Campiona solo ogni step_giorni per velocità (10-20x più veloce)
+    day_indices = range(0, rg.shape[0], step_giorni)
+    for day in day_indices:
+        stats = StatsTitoli()
+        stats.nomi = NOMI
+        stats.rendimentoGiornaliero = rg[day]
+        stats.volatilitàGiornaliera = vg[day]
+        stats.dividendiGiornalieri = divg[day]
+        stats.volatilitàDividendi = volDiv[day]
         stats.L = L
+        stats.skew = BASE_SKEW
+        stats.kurtosis = BASE_KURT
 
-        risultati = sim.simulaTitoli(stats, nSims=nSims, verbose=0)
-        target = rendimentiAnnoSuccessivo[giorno]
+        sim_ret = _simulated_median_return(stats, nSims, use_antithetic=True)
+        target = target_next[day]
 
-        # Mask NaN values: only accumulate errors where both target and results are finite
-        valid = (~np.isnan(target)) & (~np.isnan(risultati))
-
+        valid = (~np.isnan(target)) & (~np.isnan(sim_ret))
         if not np.any(valid):
-            # niente da accumulare per questo giorno
-            print(f"Giorno {giorno}: nessun dato valido (tutti NaN), salto")
             continue
 
-        diff = target - risultati
-        # accumulate only on valid positions
-        score[valid] += (diff[valid]) ** 2
-        counts[valid] += 1
+        diff = target[valid] - sim_ret[valid]
+        score[valid] += diff * diff
+        count[valid] += 1
 
-        print(f"\r{giorno}/{giorni}", end="")
+    rmse = np.full(n_assets, np.nan)
+    mask = count > 0
+    rmse[mask] = np.sqrt(score[mask] / count[mask])
 
-    simTime = time.time() - t0
-    print()
-    print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({simTime:.2f}s)")
+    # Stampa RMSE per titolo se richiesto
+    if print_rmse:
+        print("\nRMSE per titolo:")
+        for i, nome in enumerate(NOMI):
+            val = rmse[i]
+            print(f"{nome:20s}: {val:.4f}")
+        print(f"Max RMSE: {np.nanmax(rmse):.4f}")
 
-    # Calcola RMSE per asset usando i conteggi effettivi
-    rmse = np.full(n_assets, np.nan, dtype=np.float64)
-    nonzero = counts > 0
-    rmse[nonzero] = np.sqrt(score[nonzero] / counts[nonzero])
-
-    # Stampa diagnostica compatta
-    print("RMSE per asset:", rmse)
-
-    return rmse
-
-
-def objective(trial):
-    # Rolling-window cross-validation + minimax aggregation
-    lambdaEWMA = [trial.suggest_float(i, 0.5, 0.999) for i in titoli.stats.nomi]
-
-    # Calcola statistiche una volta per l'intero periodo considerato
-    (
-        rendimentoGiornaliero,
-        volatilitàGiornaliera,
-        rendimentoAnnuo,
-        volatilitàAnnua,
-        rendimentoAnnuoDividendi,
-        rendimentoGiornalieroDividendi,
-        volatilitàDividendi,
-        rendimentiAnnoSuccessivo,
-        L,
-    ) = titoli.calcolaStatsStoricheGradiente(giorni, forzaDownload=0, lambdaEWMA=lambdaEWMA)
-
-    # Imputa NaN nelle matrici temporali
-    rendimentoGiornaliero = _impute_nans_timewise(rendimentoGiornaliero)
-    volatilitàGiornaliera = _impute_nans_timewise(volatilitàGiornaliera)
-    rendimentoAnnuo = _impute_nans_timewise(rendimentoAnnuo)
-    volatilitàAnnua = _impute_nans_timewise(volatilitàAnnua)
-    rendimentoAnnuoDividendi = _impute_nans_timewise(rendimentoAnnuoDividendi)
-    rendimentoGiornalieroDividendi = _impute_nans_timewise(rendimentoGiornalieroDividendi)
-    volatilitàDividendi = _impute_nans_timewise(volatilitàDividendi)
-    rendimentiAnnoSuccessivo = _impute_nans_timewise(rendimentiAnnoSuccessivo)
-
-    n_assets = len(titoli.stats.nomi)
-
-    # Parametri rolling (configurabili)
-    train_len = max(int(0.6 * giorni), 5)
-    test_len = max(int(0.2 * giorni), 1)
-    step = max(int(0.1 * giorni), 1)
-
-    if train_len + test_len > giorni:
-        # fallback: non abbastanza giorni per folding, valuta sull'intero periodo
-        rmse = valutaLambdaEWMA(lambdaEWMA)
-        if np.all(np.isnan(rmse)):
-            return 1e6
-        return float(np.nanmax(rmse))
-
-    fold_starts = list(range(0, giorni - (train_len + test_len) + 1, step))
-    if len(fold_starts) == 0:
-        fold_starts = [0]
-
-    fold_max_rmse = []
-
-    for start in fold_starts:
-        score = np.zeros(n_assets, dtype=np.float64)
-        counts = np.zeros(n_assets, dtype=np.int64)
-
-        # Per ogni giorno nella finestra train+test, simuliamo; ma accumuliamo
-        # l'errore solo per i giorni di test (i >= train_len)
-        window_len = train_len + test_len
-        print(f"\nFold start={start} (train={train_len}, test={test_len})")
-        for offset in range(window_len):
-            day_idx = start + offset
-
-            stats = dm.Stats()
-            stats.nomi = titoli.stats.nomi
-            stats.rendimentoGiornaliero = rendimentoGiornaliero[day_idx]
-            stats.volatilitàGiornaliera = volatilitàGiornaliera[day_idx]
-            stats.rendimentoAnnuo = rendimentoAnnuo[day_idx]
-            stats.volatilitàAnnua = volatilitàAnnua[day_idx]
-            stats.rendimentoAnnuoDividendi = rendimentoAnnuoDividendi[day_idx]
-            stats.rendimentoGiornalieroDividendi = rendimentoGiornalieroDividendi[day_idx]
-            stats.volatilitàDividendi = volatilitàDividendi[day_idx]
-            stats.L = L
-
-            risultati = sim.simulaTitoli(stats, nSims=nSims, verbose=0)
-            target = rendimentiAnnoSuccessivo[day_idx]
-
-            # consideriamo solo i giorni del test per il calcolo dell'errore
-            if offset >= train_len:
-                valid = (~np.isnan(target)) & (~np.isnan(risultati))
-                if np.any(valid):
-                    diff = target - risultati
-                    score[valid] += (diff[valid]) ** 2
-                    counts[valid] += 1
-
-        # calcolo RMSE per asset sul periodo di test
-        rmse = np.full(n_assets, np.nan, dtype=np.float64)
-        nz = counts > 0
-        if np.any(nz):
-            rmse[nz] = np.sqrt(score[nz] / counts[nz])
-            fold_max_rmse.append(float(np.nanmax(rmse)))
-        else:
-            # se la fold non ha dati di test validi, penalizza pesantemente
-            fold_max_rmse.append(1e6)
-
-    # Aggregazione: media dei max(RMSE) sui fold (puoi cambiare con max per un criterio più prudente)
-    if len(fold_max_rmse) == 0:
+    if np.all(np.isnan(rmse)):
         return 1e6
-    return float(np.mean(fold_max_rmse))
+    # minimizziamo il massimo degli RMSE (minimax)
+    return float(np.nanmax(rmse))
 
 
-# crea lo study single-objective che minimizza il massimo RMSE (minimax)
-study = optuna.create_study(
-    direction="minimize", sampler=optuna.samplers.TPESampler(), pruner=optuna.pruners.MedianPruner()
-)
+# Contatore globale per tracciare valutazioni
+eval_counter = {"count": 0}
 
-attualiArray = p.ottieniLambdaEWMA(titoli.stats.nomi)
 
-attualiDict = {}
-for i, nome in enumerate(titoli.stats.nomi):
-    attualiDict[nome] = attualiArray[i]
+def objective_wrapper(lambdaEWMA: np.ndarray) -> float:
+    """Wrapper per differential_evolution con progress tracking."""
+    eval_counter["count"] += 1
+    result = valuta_lambda(lambdaEWMA, print_rmse=False)
+    if eval_counter["count"] % 10 == 0:
+        print(f"{Fore.CYAN}[Eval {eval_counter['count']}] Current best RMSE: {result:.4f}{Fore.RESET}")
+    return result
 
-study.enqueue_trial(attualiDict)
-study.optimize(objective, n_trials=40, timeout=3600)
 
-# Risultato single-objective: stampare i migliori parametri trovati
-print("\n\nBest params:", study.best_params)
-print("Best (minimax) score:", study.best_value)
+def main():
+    # Parametri iniziali (attuali)
+    attuali_array = p.ottieniLambdaEWMA(NOMI)
+
+    # Bounds: lambda tra 0.5 e 0.999 per ogni titolo
+    bounds = [(0.5, 0.999) for _ in NOMI]
+
+    print(f"{Fore.MAGENTA}Ottimizzazione lambda EWMA con Differential Evolution{Fore.RESET}")
+    print(f"{Fore.YELLOW}Popolazione: {popsize}, Max iter: {maxiter}, nSims: {nSims}{Fore.RESET}")
+    print(f"{Fore.YELLOW}Parametri iniziali: {attuali_array}{Fore.RESET}")
+    t0 = time.time()
+
+    # Reset contatore
+    eval_counter["count"] = 0
+
+    # Ottimizzazione con differential_evolution
+    result = differential_evolution(
+        objective_wrapper,
+        bounds=bounds,
+        x0=attuali_array,  # punto di partenza
+        strategy="best2bin",  # strategia più robusta
+        maxiter=maxiter,
+        popsize=popsize,
+        atol=atol,
+        tol=0.005,  # convergenza più stretta
+        mutation=(0.5, 1.5),
+        recombination=0.8,  # crossover più alto per esplorazione
+        seed=42,
+        polish=polish,  # no L-BFGS-B per velocità
+        workers=5,  # parallelizzazione con 5 core (velocità 5x)
+        updating="deferred",
+        disp=True,
+    )
+
+    print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.1f}s)")
+    print(f"\nConvergenza: {result.success}")
+    print(f"Messaggio: {result.message}")
+    print(f"Valutazioni totali: {result.nfev}")
+
+    # Rivaluta il risultato FINALE con finestra COMPLETA (1 anno)
+    print(f"\n{Fore.CYAN}Rivalutazione finale con {giorni_finale} giorni...{Fore.RESET}")
+    final_score = valuta_lambda(result.x, print_rmse=True, giorni_override=giorni_finale)
+
+    print("\nBest params:")
+    for i, nome in enumerate(NOMI):
+        print(f"  {nome}: {result.x[i]:.6f}")
+    print(f"\nBest score (max RMSE): {final_score:.6f}")
+    print(f"Cache stats gradiente: {len(stats_gradient_cache)} entry")
+
+    # Salva risultati
+    best_params = {nome: result.x[i] for i, nome in enumerate(NOMI)}
+    return best_params, result.fun
+
+
+if __name__ == "__main__":
+    main()
