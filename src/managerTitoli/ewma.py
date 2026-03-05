@@ -3,7 +3,7 @@ import numpy as np
 
 
 @njit
-def mediaEWMA(data: np.ndarray, lambdaEWMA: np.ndarray) -> np.ndarray:
+def mediaEWMA(data: np.ndarray, lambdaEWMA: np.ndarray) -> float:
     """
     Calcola la media ponderata esponenziale dei log-returns, gestendo NaN.
     Rappresenta il drift giornaliero (media del log-return).
@@ -13,7 +13,7 @@ def mediaEWMA(data: np.ndarray, lambdaEWMA: np.ndarray) -> np.ndarray:
     :param lambdaEWMA: i coefficenti
     :type lambdaEWMA: `np.ndarray`
     :return: media EWMA
-    :rtype: `np.ndarray`
+    :rtype: `float`
     """
 
     n = len(data)
@@ -38,7 +38,7 @@ def mediaEWMA(data: np.ndarray, lambdaEWMA: np.ndarray) -> np.ndarray:
 
 
 @njit
-def varianzaEWMA(data: np.ndarray, lambdaEWMA: np.ndarray) -> np.ndarray:
+def varianzaEWMA(data: np.ndarray, lambdaEWMA: np.ndarray) -> float:
     """
     Calcola la varianza ponderata esponenziale, gestendo NaN.
     Usa il metodo della varianza con pesi EWMA per robustezza.
@@ -48,7 +48,7 @@ def varianzaEWMA(data: np.ndarray, lambdaEWMA: np.ndarray) -> np.ndarray:
     :param lambdaEWMA: i coefficenti
     :type lambdaEWMA: `np.ndarray`
     :return: varianza ottenuta tramite lambda EWMA
-    :rtype: `np.ndarray`
+    :rtype: `float`
     """
 
     n = len(data)

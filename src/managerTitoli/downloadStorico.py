@@ -5,6 +5,7 @@ import datetime as dt
 from colorama import Fore
 import numpy as np
 import yfinance as yf
+from src.const import GIORNI_IN_UN_ANNO
 
 
 class DownloadData:
@@ -62,8 +63,8 @@ def _downloadYFinance(nomi: tuple, anni: int) -> tuple[np.ndarray, np.ndarray, n
         # Riordina le colonne e riempi eventuali NaN con 0
         dividends = dividends.reindex(columns=nomi, fill_value=0.0)
 
-    # * Filtra ticker con almeno 1260 giorni di dati originali (circa 5 anni di trading)
-    giorni_minimi = 1260
+    # * Filtra ticker con almeno 2 anni di dati originali (circa 3 anni di trading)
+    giorni_minimi = GIORNI_IN_UN_ANNO * 2
     nomi_invalidi = [ticker for ticker in nomi if len(close[ticker].dropna()) <= giorni_minimi]
     if nomi_invalidi != []:
         print(f"{Fore.RED} I seguenti titoli non hanno un numero sufficiente di giorni di dati:")

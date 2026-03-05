@@ -4,3 +4,4 @@ numba
 matplotlib
 optuna
 scipy
+pymoo

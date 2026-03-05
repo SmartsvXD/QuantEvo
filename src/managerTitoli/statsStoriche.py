@@ -110,13 +110,13 @@ def _calcolaStatsTitoli(
 
 
 @njit(parallel=True)
-def _calcolaL(rendimenti: np.ndarray) -> np.ndarray:
+def _calcolaMatriceCorrelazione(rendimenti: np.ndarray) -> np.ndarray:
     """
-    Calcola la matrice di Cholesky della matrice di correlazione.
-    
-    :param rendimenti: Array dei rendimenti di cuoi calcolare la correlazione
+    Calcola la matrice di correlazione dai rendimenti.
+
+    :param rendimenti: Array dei rendimenti di cui calcolare la correlazione
     :type rendimenti: `np.ndarray`
-    
+
     :return: matrice di correlazione
     :rtype: `np.ndarray`
     """
@@ -158,16 +158,43 @@ def _calcolaL(rendimenti: np.ndarray) -> np.ndarray:
 
     # Assicura che la matrice sia semi-definita positiva
     for i in range(n):
-        corr_matrix[i, i] = 1.0 + 1e-10
+        corr_matrix[i, i] = 1.0
 
-    # Rende la matrice simmetrica e aggiunge jitter per robustezza numerica
+    # Rende la matrice simmetrica
     corr_matrix = 0.5 * (corr_matrix + corr_matrix.T)
-    corr_matrix += np.eye(n) * 1e-6
 
-    # Passo 3: Applica Cholesky alla matrice di correlazione (NON scalata)
-    L = np.linalg.cholesky(corr_matrix)
+    return corr_matrix
 
-    return L
+
+def _calcolaL(rendimenti: np.ndarray) -> np.ndarray:
+    """
+    Calcola la matrice di Cholesky della matrice di correlazione.
+    Gestisce il caso in cui la matrice non sia definita positiva aumentando il jitter.
+
+    :param rendimenti: Array dei rendimenti di cui calcolare la correlazione
+    :type rendimenti: `np.ndarray`
+
+    :return: matrice di Cholesky
+    :rtype: `np.ndarray`
+    """
+    corr_matrix = _calcolaMatriceCorrelazione(rendimenti)
+    n = corr_matrix.shape[0]
+
+    # Tenta di calcolare la decomposizione di Cholesky con jitter crescente
+    jitter_values = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 0.05, 0.1]
+
+    for jitter in jitter_values:
+        try:
+            # Aggiunge jitter alla diagonale
+            corr_matrix_jittered = corr_matrix + np.eye(n) * jitter
+            L = np.linalg.cholesky(corr_matrix_jittered)
+            return L
+        except np.linalg.LinAlgError:
+            continue
+
+    # Fallback: usa una matrice identità (nessuna correlazione)
+    print(f"{Fore.YELLOW}Warning: Impossibile calcolare la matrice di Cholesky. Usando matrice identità.{Fore.RESET}")
+    return np.eye(n)
 
 
 def calcolaStatsStoriche(data: DownloadData, lambdaEWMA: np.ndarray, verbose: int = 1) -> StatsTitoli:
@@ -229,7 +256,7 @@ def calcolaStatsStoriche(data: DownloadData, lambdaEWMA: np.ndarray, verbose: in
     if verbose >= 1:
         print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({t:.2f}s)")
 
-    # * Stampiamo le stats storiche se richiestp
+    # * Stampiamo le stats storiche se richieste
     if verbose == 2:
         print(f"\n{Fore.MAGENTA}Dati Storici Titoli{Fore.RESET}: ")
         for i, componente in enumerate(stats.nomi):
@@ -248,9 +275,7 @@ def calcolaStatsStoriche(data: DownloadData, lambdaEWMA: np.ndarray, verbose: in
 
             rendimentoAnnuoDividendi = stats.dividendiGiornalieri[i] * GIORNI_IN_UN_ANNO
 
-            print(
-                f"        {Fore.YELLOW}Rendimento da Dividendi{Fore.RESET}: \t{rendimentoAnnuoDividendi:06.2%}"
-            )
+            print(f"        {Fore.YELLOW}Rendimento da Dividendi{Fore.RESET}: \t{rendimentoAnnuoDividendi:06.2%}")
 
     return stats
 
