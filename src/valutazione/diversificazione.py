@@ -1,21 +1,38 @@
 import numpy as np
-from src.valutazione.rischioTotale import rischioTotale
+from numba import njit
+
+from src.valutazione.indice import Indice
 
 
-def diversificazione(portafoglio, stats):
-    """
-    Calcola la funzione di diversificazione intelligente (f3).
+@njit(fastmath=True)
+def _diversificazione(portafoglio, quadCorr):
+    quadCorr = np.maximum(quadCorr, 1e-12)
+    enb = 1.0 / quadCorr
 
-    Parametri:
-    - portafoglio: array numpy, pesi del portafoglio (uno per ogni titolo in stats).
-    - stats: oggetto StatsTitoli.
+    if portafoglio.shape[1] > 1:
+        enb_norm = (enb - 1.0) / (portafoglio.shape[1] - 1.0)
+    else:
+        enb_norm = np.zeros_like(enb)
 
-    Ritorna:
-    - Valore di f3, che misura la deviazione dei contributi al rischio.
-    """
-    pesi = np.array(portafoglio)
-    T = stats.L  # Matrice di covarianza completa
-    risk_contributions = pesi * np.dot(T, pesi)
-    N = len(pesi)
-    target_contribution = rischioTotale(portafoglio, stats) / N
-    return np.sum((risk_contributions - target_contribution) ** 2)
+    enb_norm = np.clip(enb_norm, 0.0, 1.0)
+
+    hhi = np.sum(portafoglio * portafoglio, axis=1)
+    if portafoglio.shape[1] > 1:
+        hhi_norm = (hhi - 1.0 / portafoglio.shape[1]) / (1.0 - 1.0 / portafoglio.shape[1])
+    else:
+        hhi_norm = np.ones_like(hhi)
+
+    hhi_norm = np.clip(hhi_norm, 0.0, 1.0)
+
+    return (1.0 - enb_norm) + hhi_norm
+
+
+class DiversificazioneIndice(Indice):
+    def calcola(self, portafoglio, stats, standardizza=False, **kwargs):
+        portafoglio = np.atleast_2d(portafoglio)
+        
+        quadCorr = np.einsum("pi,ij,pj->p", portafoglio, stats.corr, portafoglio)
+        
+        val = _diversificazione(portafoglio, quadCorr)
+        
+        return self.standardizza(val, standardizza=standardizza)

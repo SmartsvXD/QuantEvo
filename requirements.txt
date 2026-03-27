@@ -5,3 +5,4 @@ matplotlib
 optuna
 scipy
 pymoo
+scikit-learn

@@ -2,58 +2,107 @@ from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.optimize import minimize
 from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
-from src.genetica.pymoo import PortfolioProblem, ValidPortfolioSampling, PortfolioRepair
+import numpy as np
+from colorama import Fore
+import time
+
+from src.genetica.pymoo import ProblemaPortafoglio, ValidPortfolioSampling, PortfolioRepair, EarlyStoppingCallback
 from src.genetica.utils import ordina
+from src.managerTitoli import StatsTitoli
+from src.valutazione import ValutatoreMultiplo
 
 
-# Esempio di utilizzo:
-def run(statsStoriche, pop_size=600, n_gen=1500, seed=1):
-    # Prova a ricavare n_var in modo robusto
-    n_var = len(statsStoriche.nomi)
+def run(
+    statsStoriche: StatsTitoli,
+    valutatore: ValutatoreMultiplo,
+    upper=None,
+    percentualeMinima=0.05,
+    popSize=600,
+    nGen=1500,
+    seeds=None,
+    faiEarlyStopping=True,
+    pazienzaEarlyStopping=40,
+    minTitoli=3,
+    hv_ref_point=None,
+    verbose=1,
+):
+    t0 = time.time()
 
-    problem = PortfolioProblem(statsStoriche, n_var)
-    sampling = ValidPortfolioSampling(n_var, percentualeMinima=0.05)
-    repair = PortfolioRepair(percentualeMinima=0.05)
-    crossover = SBX(prob=0.9, eta=15)
-    mutation = PM(prob=0.2, eta=20)
-    algorithm = NSGA2(pop_size=pop_size, sampling=sampling, crossover=crossover, mutation=mutation, repair=repair)
-    res = minimize(problem, algorithm, ("n_gen", n_gen), seed=seed, verbose=True)
-    
-    ris, port = ordina(res.F, res.X)
-    
+    if verbose >= 1:
+        print(f"\n{Fore.MAGENTA}Esecuzione dell'algoritmo evolutivo...{Fore.LIGHTBLACK_EX}")
+
+    nValutazioni = len(statsStoriche.nomi)
+
+    all_F = []
+    all_X = []
+
+    if seeds is None:
+        seeds = [1]
+
+    for s in seeds:
+        problem = ProblemaPortafoglio(statsStoriche, nValutazioni, valutatore=valutatore)
+
+        sampling = ValidPortfolioSampling(
+            nValutazioni, percentualeMinima=percentualeMinima, upper=upper, minTitoli=minTitoli
+        )
+
+        repair = PortfolioRepair(percentualeMinima=percentualeMinima, upper=upper, minTitoli=minTitoli)
+
+        crossover = SBX(prob=0.9, eta=20)
+        mutation = PM(prob=0.15, eta=25)
+
+        algorithm = NSGA2(popSize=popSize, sampling=sampling, crossover=crossover, mutation=mutation, repair=repair)
+
+        callback = None
+        if faiEarlyStopping:
+            callback = EarlyStoppingCallback(
+                patience=pazienzaEarlyStopping,
+                min_improvement=1e-5,
+                verbose=verbose - 1,
+                ref_point=hv_ref_point,
+            )
+
+        res = minimize(problem, algorithm, ("n_gen", nGen), seed=int(s), verbose=verbose, callback=callback)
+
+        all_F.append(res.F)
+        all_X.append(res.X)
+
+    if len(all_F) == 0:
+        return [], []
+
+    F_concat = np.vstack(all_F)
+    X_concat = np.vstack(all_X)
+
+    ris, port = ordina(F_concat, X_concat, upper=upper, percentualeMinima=percentualeMinima, minTitoli=minTitoli)
+
+    if verbose >= 1:
+        print(f"{Fore.MAGENTA}Fatto! {Fore.RESET}({time.time() - t0:.2f}s)")
+
     return ris, port
 
 
-# Esempio:
 def _test():
-    import src.managerTitoli as titoli
-    from colorama import Fore
     import json
-    import numpy as np
-    from src.genetica.utils import ordina
+    
+    from src.valutazione.sharpe import SharpeIndice
+    from src.valutazione.rischio import RischioTotaleCorrettoIndice
+    from src.valutazione.diversificazione import DiversificazioneIndice
+    from src.utils.generaPortafogliValidi import generaPortafoliValidi
+    from src.utils.vincoli import applicaVincoli
 
-    with open("./titoli.json", "r") as file:
-        nomiTitoli = json.load(file)
-    storico = titoli.download(nomiTitoli, forzaDownload=0)
-    statsStoriche = titoli.calcolaStatsStoriche(storico, [0.98 for _ in nomiTitoli])
+    with open("titoli.json", "r") as file:
+        titoli = [x[0] for x in json.load(file)]
 
-    result = run(statsStoriche)
+    s = StatsTitoli(titoli, verbose=1)
+    s.calcolaStats(verbose=1)
 
-    validiPort = []
-    validiRis = []
-    for i, port in enumerate(result.X):
-        if not np.any(port >= 0.2):
-            validiPort.append(port)
-            validiRis.append(result.F[i])
+    sharpe = SharpeIndice(faiBootstrap=False)
+    rischio = RischioTotaleCorrettoIndice()
+    div = DiversificazioneIndice()
 
-    print("\n\n\n")
-    print("")
+    v = ValutatoreMultiplo((div, sharpe, rischio), (0,0,0))
+    
+    portafogli = generaPortafoliValidi(titoli, vincoli=applicaVincoli)
+    v.fitStandardizza(portafogli, s)
 
-    ris, port = ordina(validiRis, validiPort)
-    print(f"{Fore.MAGENTA}Top 5{Fore.RESET}")
-    for i in reversed(range(5)):
-        print(f"\t{Fore.GREEN}N.{i + 1}{Fore.RESET}")
-        print(f"\t\tDiversificazione: {ris[i][0]:.2%}²; Sharpe: {-ris[i][1]:.2f}; Rischio Totale: {ris[i][2]:.2%}²")
-        for j in range(len(statsStoriche.nomi)):
-            if port[i][j] != 0:
-                print(f"\t\t{Fore.YELLOW}{statsStoriche.nomi[j]}{Fore.RESET}: {port[i][j]:.2%}")
+    run(s, v)

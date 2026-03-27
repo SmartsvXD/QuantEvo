@@ -5,15 +5,7 @@ import datetime as dt
 from colorama import Fore
 import numpy as np
 import yfinance as yf
-from src.const import GIORNI_IN_UN_ANNO
-
-
-class DownloadData:
-    """
-    Struttura per salvare tutti i dati storici dei titoli
-    """
-
-    __slots__ = ("nomi", "rendimenti", "dividendi", "close")
+from src.const import GIORNI_MINIMI_VALIDITA
 
 
 def _downloadYFinance(nomi: tuple, anni: int) -> tuple[np.ndarray, np.ndarray, np.ndarray] | tuple[None, None, None]:
@@ -24,8 +16,8 @@ def _downloadYFinance(nomi: tuple, anni: int) -> tuple[np.ndarray, np.ndarray, n
     :type nomi: `tuple`
     :param anni: Specifica il numero di anni di dati che vogliamo scaricare
     :type anni: `int`
-    :return: rendimenti, dividendi e close dei titoli richiesti
-    :rtype: `np.ndarray`, `np.ndarray`, `np.ndarray` o `None`, `None`, `None` in caso di errore
+    :return: rendimenti e close dei titoli richiesti
+    :rtype: `np.ndarray` o `None` in caso di errore
     """
 
     # * Utilizziamo la libreria yfinance per scaricare le informazioni
@@ -40,53 +32,39 @@ def _downloadYFinance(nomi: tuple, anni: int) -> tuple[np.ndarray, np.ndarray, n
 
     # * Controlliamo quali ticker sono effettivamente presenti nel risultato.
     scaricati = []
-    if "Close" in data and hasattr(data["Close"], "columns"):
-        scaricati = list(data["Close"].columns)
+    if "Adj Close" in data and hasattr(data["Adj Close"], "columns"):
+        scaricati = list(data["Adj Close"].columns)
 
     if len(scaricati) != len(nomi):
         mancanti = set(nomi) - set(scaricati)
         if mancanti:
-            print(f"{Fore.RED}Download incompleto, mancano: {', '.join(mancanti)}{Fore.RESET}")
+            raise Exception(f"{Fore.RED}Download incompleto, mancano: {', '.join(mancanti)}{Fore.RESET}")
         return None, None, None
 
     # * Riordina i dati per avere lo stesso ordine di nomi
-    close = data.get("Close")
-    dividends = data.get("Dividends") if "Dividends" in data else None
+    adjClose = data.get("Adj Close")
 
-    close = close[nomi]
+    adjClose = adjClose[nomi]
 
-    # Se i dividendi non sono disponibili, crea una matrice di zeri con lo stesso shape di close
-    if dividends is None:
-        dividends = close.copy()
-        dividends.iloc[:, :] = 0.0
-    else:
-        # Riordina le colonne e riempi eventuali NaN con 0
-        dividends = dividends.reindex(columns=nomi, fill_value=0.0)
-
-    # * Filtra ticker con almeno 2 anni di dati originali (circa 3 anni di trading)
-    giorni_minimi = GIORNI_IN_UN_ANNO * 2
-    nomi_invalidi = [ticker for ticker in nomi if len(close[ticker].dropna()) <= giorni_minimi]
+    # * Filtra ticker con almeno che non rispettano un limite minimo di giorni di dati
+    nomi_invalidi = [ticker for ticker in nomi if len(adjClose[ticker].dropna()) <= GIORNI_MINIMI_VALIDITA]
     if nomi_invalidi != []:
         print(f"{Fore.RED} I seguenti titoli non hanno un numero sufficiente di giorni di dati:")
         for i in nomi_invalidi:
             print(f"\t{i}")
         print(Fore.RESET)
-        return None, None, None
+        raise Exception("Impossibile continuare, i titoli non rispettano i limiti minimi di giorni")
 
     # * Trasforma i dati in numpy array
     # Calcola i log-returns giornalieri: ln(P_t / P_{t-1})
-    rendimenti = np.array(np.log(close / close.shift(1)).dropna(how="all")).T
-    # Salva i dividendi giornalieri
-    dividendi = np.array(dividends).T
-    # Salva i prezzi di chiusura
-    close = np.array(close).T
+    rendimenti = np.array(np.log(adjClose / adjClose.shift(1)).dropna(how="all")).T
 
-    return rendimenti, dividendi, close
+    return rendimenti
 
 
 def download(
     nomi: tuple, fonte: str = "yfinance", anni: int = 50, forzaDownload: bool = 1, verbose: bool = 1
-) -> DownloadData | None:
+) -> np.array | None:
     """
     Permette di ottenere le informazioni per i titoli richiesti. Se esistono dei dati validi salvati in cache li carica da li,
     mentre se non esistono li scarica direttamente dalla fonte richiesta. Restituisce rendimenti, close, dividendi.
@@ -102,7 +80,7 @@ def download(
     :param verbose: Specifica se vogliamo avere informazioni su quello che fa la funzione
     :type verbose: `bool`
     :return: I dati storici dei titoli richiesti
-    :rtype: `DownloadData` o `None` in caso di errore
+    :rtype: `np.array` o `None` in caso di errore
     """
 
     # Variabile booleana che determinerà se i dati devono essere scaricati o presi dal cache
@@ -137,19 +115,15 @@ def download(
             if verbose:
                 print(f"\n{Fore.MAGENTA}Scaricando i dati da Yahoo Finance{Fore.RESET}:{Fore.LIGHTBLACK_EX}")
 
-            rendimenti, dividendi, close = _downloadYFinance(nomi, anni)
+            rendimenti = _downloadYFinance(nomi, anni)
         else:
             print(f"{Fore.RED}ERRORE! La fonte {fonte} non è valida!{Fore.RESET}")
 
-        if rendimenti is None or dividendi is None or close is None:
+        if rendimenti is None:
             print(f"{Fore.RED}ERRORE! Impossibile scaricare i dati!{Fore.RESET}")
             return None
 
-        data = DownloadData()
-        data.nomi = nomi
-        data.rendimenti = np.array(rendimenti)
-        data.dividendi = np.array(dividendi)
-        data.close = np.array(close)
+        rendimenti = np.array(rendimenti)
 
         # Salviamo i nuovi dati scaricati
         if verbose:
@@ -164,17 +138,18 @@ def download(
 
         # Salviamo i dati
         with open("./data/titoli.data", "wb") as file:
-            pk.dump(data, file)
+            pk.dump(rendimenti, file)
+
     # * Carichiamo i dati dal cache
     else:
         if verbose:
             print(f"{Fore.MAGENTA}Caricando i dati da {Fore.RESET}./data/titoli.data{Fore.MAGENTA}...{Fore.RESET}")
 
         with open("./data/titoli.data", "rb") as file:
-            data = pk.load(file)
+            rendimenti = pk.load(file)
 
     t = time.time() - t0
     if verbose:
         print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({t:.2f}s)")
 
-    return data
+    return rendimenti

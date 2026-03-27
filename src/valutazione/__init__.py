@@ -1,29 +1,75 @@
-from src.valutazione.sharpe import sharpe
-from src.valutazione.rischioTotale import rischioTotale
-from src.valutazione.diversificazione import diversificazione
+import numpy as np
+from colorama import Fore
+import time
+
+from src.managerTitoli import StatsTitoli
 
 
-def valuta(portafoglio, statsStoriche):
-    return (
-        rischioTotale(portafoglio, statsStoriche),
-        -sharpe(portafoglio, statsStoriche),
-        diversificazione(portafoglio, statsStoriche),
-    )
+class ValutatoreMultiplo:
+    def __init__(self, indici: tuple, pesi: tuple):
+        self.indici = indici
+        self.pesi = pesi  # Al momento non utilizzato
+
+        if len(self.indici) != len(self.pesi):
+            raise Exception("Il numero di indici e di pesi deve essere lo stesso")
+
+    def fitStandardizza(self, listaPortafogli, stats, **kwargs):
+        N_PUNTI = 30
+
+        print(f"\n{Fore.MAGENTA}Fitto la standardizzazione dei valutatori{Fore.RESET}...")
+        t0 = time.time()
+
+        for n, i in enumerate(self.indici):
+            filled = round((n + 1) / len(self.indici) * N_PUNTI)
+            empty = N_PUNTI - filled
+            print(f"\r{Fore.LIGHTBLACK_EX}{n + 1}/{len(self.indici)} [{'*' * filled}{' ' * empty}]{Fore.RESET}", end="")
+
+            i.fitStandardizza(listaPortafogli, stats, **kwargs)
+
+        print(f"\n{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
+
+    def calcola(self, portafoglio, stats, standardizza=False, **kwargs):
+        portafoglio = np.atleast_2d(portafoglio)
+
+        res = np.empty((portafoglio.shape[0], len(self.indici)), dtype=np.float64)
+        for n, i in enumerate(self.indici):
+            vals = i.calcola(portafoglio, stats, standardizza=standardizza, **kwargs)
+            res[:, n] = vals
+            
+        return res
 
 
 def _test():
-    import src.managerTitoli as titoli
-    import json
+    import numpy as np
 
-    portafoglio = [0.5, 0.3, 0.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    from src.valutazione.sharpe import SharpeIndice
+    from src.valutazione.rischio import RischioTotaleCorrettoIndice
+    from src.valutazione.diversificazione import DiversificazioneIndice
+    from src.utils.generaPortafogliValidi import generaPortafoliValidi
+    from src.utils.vincoli import applicaVincoli
 
-    with open("./titoli.json", "r") as file:
-        nomiTitoli = json.load(file)
+    titoli = ["CSUS.MI", "SWDA.MI", "SGLD.MI"]
+    pesi = np.array([0.2, 0.3, 0.5])
 
-    storico = titoli.download(nomiTitoli, forzaDownload=0)
+    s = StatsTitoli(titoli, verbose=1)
+    s.calcolaStats(verbose=1)
 
-    statsStoriche = titoli.calcolaStatsStoriche(storico, [0.9 for _ in nomiTitoli])
+    print(f"\n{Fore.MAGENTA}Genero portafogli validi{Fore.RESET}...")
+    t0 = time.time()
+    portafogli = generaPortafoliValidi(titoli, vincoli=applicaVincoli, n=10000)
+    print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
-    print(rischioTotale(portafoglio, statsStoriche))
-    print(-sharpe(portafoglio, statsStoriche))
-    print(diversificazione(portafoglio, statsStoriche))
+    diversificazione = DiversificazioneIndice()
+    sharpe = SharpeIndice()
+    rischioCorretto = RischioTotaleCorrettoIndice()
+
+    v = ValutatoreMultiplo((diversificazione, sharpe, rischioCorretto), (1, -1, 1))
+    v.fitStandardizza(portafogli, s)
+
+    ris = v.calcola(pesi, s, standardizza=True)
+
+    print(ris)
+
+    ris = v.calcola(pesi, s, standardizza=False)
+
+    print(ris)

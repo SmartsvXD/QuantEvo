@@ -3,71 +3,84 @@ import numpy as np
 
 
 @njit
-def mediaEWMA(data: np.ndarray, lambdaEWMA: np.ndarray) -> float:
+def mediaEWMA(data: np.ndarray, lambdaEWMA: float) -> np.ndarray:
     """
-    Calcola la media ponderata esponenziale dei log-returns, gestendo NaN.
-    Rappresenta il drift giornaliero (media del log-return).
+    Accetta solo array 2D e restituisce un array 1D con la media EWMA per
+    ogni riga (sottarray). I NaN vengono ignorati.
 
-    :param data: dati su cui applicare la media
-    :type data: `np.ndarray`
-    :param lambdaEWMA: i coefficenti
-    :type lambdaEWMA: `np.ndarray`
-    :return: media EWMA
-    :rtype: `float`
+    Implementazione: calcola i pesi EWMA tramite numpy e poi per ogni riga
+    applica i pesi ignorando i NaN (loop sulle righe per compatibilità con
+    numba `@njit`).
     """
 
-    n = len(data)
+    nrows = data.shape[0]
+    ncols = data.shape[1]
 
-    # Pesi EWMA
-    exps = np.arange(n - 1, -1, -1)
-    pesi = np.power(lambdaEWMA, exps)
+    # pesi EWMA: (1 - λ) * λ^(ncols-1), ..., (1 - λ) * λ^0
+    pesi = (1.0 - lambdaEWMA) * np.power(lambdaEWMA, np.arange(ncols - 1, -1, -1))
 
-    # Escludi i NaN dai calcoli
-    valid = ~np.isnan(data)
-    pesi_valid = pesi * valid
-    somma = np.sum(pesi_valid)
+    out = np.empty(nrows, dtype=np.float64)
+    for i in range(nrows):
+        somma = 0.0
+        weighted_sum = 0.0
+        for j in range(ncols):
+            x = data[i, j]
+            if not np.isnan(x):
+                w = pesi[j]
+                somma += w
+                weighted_sum += w * x
+        if somma == 0.0:
+            out[i] = 0.0
+        else:
+            out[i] = weighted_sum / somma
 
-    if somma == 0.0:
-        return 0.0
-
-    pesi_valid /= somma
-    clean_data = np.where(valid, data, 0.0)
-    media = np.sum(pesi_valid * clean_data)
-
-    return media
+    return out
 
 
 @njit
-def varianzaEWMA(data: np.ndarray, lambdaEWMA: np.ndarray) -> float:
+def stdEWMA(data: np.ndarray, lambdaEWMA: float) -> np.ndarray:
     """
-    Calcola la varianza ponderata esponenziale, gestendo NaN.
-    Usa il metodo della varianza con pesi EWMA per robustezza.
-
-    :param data: dati su cui applicare la media
-    :type data: `np.ndarray`
-    :param lambdaEWMA: i coefficenti
-    :type lambdaEWMA: `np.ndarray`
-    :return: varianza ottenuta tramite lambda EWMA
-    :rtype: `float`
+    Accetta solo array 2D e restituisce un array 1D con la deviazione
+    standard ponderata EWMA per ogni riga. I NaN vengono ignorati.
     """
+    if data.ndim != 2:
+        return np.empty(0, dtype=np.float64)
 
-    n = len(data)
+    nrows = data.shape[0]
+    ncols = data.shape[1]
 
-    pesi = np.power(lambdaEWMA, np.arange(n - 1, -1, -1))
+    # Pesi EWMA: (1 - λ) * λ^(ncols-1), ..., (1 - λ) * λ^0
+    pesi = (1.0 - lambdaEWMA) * np.power(lambdaEWMA, np.arange(ncols - 1, -1, -1))
 
-    valid = ~np.isnan(data)
-    pesi_valid = pesi * valid
-    somma = np.sum(pesi_valid)
+    out = np.empty(nrows, dtype=np.float64)
+    for i in range(nrows):
+        # somma dei pesi validi
+        somma = 0.0
+        for j in range(ncols):
+            if not np.isnan(data[i, j]):
+                somma += pesi[j]
 
-    if somma == 0.0:
-        return 0.0
+        if somma == 0.0:
+            out[i] = 0.0
+            continue
 
-    pesi_valid /= somma
-    clean_data = np.where(valid, data, 0.0)
+        # media pesata normalizzata
+        mu = 0.0
+        for j in range(ncols):
+            x = data[i, j]
+            if not np.isnan(x):
+                w = pesi[j] / somma
+                mu += w * x
 
-    media = np.sum(pesi_valid * clean_data)
+        # varianza pesata
+        var = 0.0
+        for j in range(ncols):
+            x = data[i, j]
+            if not np.isnan(x):
+                w = pesi[j] / somma
+                diff = x - mu
+                var += w * diff * diff
 
-    diff = clean_data - media
-    varianza = np.sum(pesi_valid * diff * diff)
+        out[i] = np.sqrt(var)
 
-    return varianza
+    return out
