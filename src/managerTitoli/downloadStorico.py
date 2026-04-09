@@ -90,11 +90,11 @@ def download(
 
     # * Verifichiamo se dovremmo scaricare o meno
     # Se non esiste un cache o è forzato devi scaricare
-    if not (os.path.exists("./data/titoli.data")) or forzaDownload:
+    if not (os.path.exists("./data/titoliDownload.data")) or forzaDownload:
         scarica = 1
     else:
         # Se il file esite e il download non è forzato dovremmo verificare che il cache sia idoneo
-        with open("./data/info.data", "rb") as file:
+        with open("./data/infoDownload.data", "rb") as file:
             info = pk.load(file)
 
         # Se il cache è più vecchio di un giorno non va bene
@@ -128,24 +128,24 @@ def download(
         # Salviamo i nuovi dati scaricati
         if verbose:
             print(
-                f"{Fore.MAGENTA}Salvando i dati in {Fore.RESET}./data/titoli.data{Fore.MAGENTA} e {Fore.RESET}./data/info.data{Fore.MAGENTA}...{Fore.RESET}"
+                f"{Fore.MAGENTA}Salvando i dati in {Fore.RESET}./data/titoliDownload.data{Fore.MAGENTA} e {Fore.RESET}./data/infoDownload.data{Fore.MAGENTA}...{Fore.RESET}"
             )
 
         # Salviamo le info
         info = {"data": dt.date.today(), "titoli": nomi, "fonte": fonte}
-        with open("./data/info.data", "wb") as file:
+        with open("./data/infoDownload.data", "wb") as file:
             pk.dump(info, file)
 
         # Salviamo i dati
-        with open("./data/titoli.data", "wb") as file:
+        with open("./data/titoliDownload.data", "wb") as file:
             pk.dump(rendimenti, file)
 
     # * Carichiamo i dati dal cache
     else:
         if verbose:
-            print(f"{Fore.MAGENTA}Caricando i dati da {Fore.RESET}./data/titoli.data{Fore.MAGENTA}...{Fore.RESET}")
+            print(f"\n{Fore.MAGENTA}Caricando i dati da {Fore.RESET}./data/titoliDownload.data{Fore.MAGENTA}...{Fore.RESET}")
 
-        with open("./data/titoli.data", "rb") as file:
+        with open("./data/titoliDownload.data", "rb") as file:
             rendimenti = pk.load(file)
 
     t = time.time() - t0

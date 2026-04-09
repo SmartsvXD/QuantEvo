@@ -3,38 +3,49 @@ from colorama import Fore
 import time
 
 from src.managerTitoli import StatsTitoli
+from src.const import N_PUNTI_BARRA_CARICAMENTO
 
 
 class ValutatoreMultiplo:
-    def __init__(self, indici: tuple, pesi: tuple):
-        self.indici = indici
-        self.pesi = pesi  # Al momento non utilizzato
+    def __init__(self, indici: tuple, inverti: tuple = None):
+        self._indici = indici
 
-        if len(self.indici) != len(self.pesi):
+        if len(self._indici) != len(inverti):
             raise Exception("Il numero di indici e di pesi deve essere lo stesso")
 
-    def fitStandardizza(self, listaPortafogli, stats, **kwargs):
-        N_PUNTI = 30
+        if inverti is None:
+            self._inverti = np.ones(len(self._indici))
+        else:
+            self._inverti = np.ones(len(self._indici)) - 2 * np.array(inverti, bool)
+            
+        self.numIndici = len(self._indici) 
 
-        print(f"\n{Fore.MAGENTA}Fitto la standardizzazione dei valutatori{Fore.RESET}...")
+    def fitStandardizza(self, listaPortafogli, stats):
+        print(f"\n{Fore.MAGENTA}Fitto la standardizzazione dei valutatori...{Fore.RESET}")
         t0 = time.time()
 
-        for n, i in enumerate(self.indici):
-            filled = round((n + 1) / len(self.indici) * N_PUNTI)
-            empty = N_PUNTI - filled
-            print(f"\r{Fore.LIGHTBLACK_EX}{n + 1}/{len(self.indici)} [{'*' * filled}{' ' * empty}]{Fore.RESET}", end="")
+        for n, i in enumerate(self._indici):
+            filled = round(n / len(self._indici) * N_PUNTI_BARRA_CARICAMENTO)
+            empty = N_PUNTI_BARRA_CARICAMENTO - filled
+            print(f"\r{Fore.LIGHTBLACK_EX}{n}/{len(self._indici)} [{'*' * filled}{' ' * empty}]{Fore.RESET}", end="")
 
-            i.fitStandardizza(listaPortafogli, stats, **kwargs)
+            i.fitStandardizza(listaPortafogli, stats)
 
-        print(f"\n{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
+        print(
+            f"\r{Fore.LIGHTBLACK_EX}{len(self._indici)}/{len(self._indici)} [{'*' * N_PUNTI_BARRA_CARICAMENTO}]{Fore.RESET}"
+        )
+        print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
-    def calcola(self, portafoglio, stats, standardizza=False, **kwargs):
+    def calcola(self, portafoglio, stats, inverti = False, standardizza=False):
         portafoglio = np.atleast_2d(portafoglio)
 
-        res = np.empty((portafoglio.shape[0], len(self.indici)), dtype=np.float64)
-        for n, i in enumerate(self.indici):
-            vals = i.calcola(portafoglio, stats, standardizza=standardizza, **kwargs)
+        res = np.empty((portafoglio.shape[0], len(self._indici)), dtype=np.float64)
+        for n, i in enumerate(self._indici):
+            vals = i.calcola(portafoglio, stats, standardizza=standardizza)
             res[:, n] = vals
+
+        if inverti:
+            res *= self._inverti
             
         return res
 
@@ -42,10 +53,11 @@ class ValutatoreMultiplo:
 def _test():
     import numpy as np
 
-    from src.valutazione.sharpe import SharpeIndice
+    #from src.valutazione.sharpe import SharpeIndice
     from src.valutazione.rischio import RischioTotaleCorrettoIndice
+    from src.valutazione.omega import OmegaIndice
     from src.valutazione.diversificazione import DiversificazioneIndice
-    from src.utils.generaPortafogliValidi import generaPortafoliValidi
+    from src.utils.generaPortafogliValidi import generaPortafogliValidi
     from src.utils.vincoli import applicaVincoli
 
     titoli = ["CSUS.MI", "SWDA.MI", "SGLD.MI"]
@@ -56,11 +68,11 @@ def _test():
 
     print(f"\n{Fore.MAGENTA}Genero portafogli validi{Fore.RESET}...")
     t0 = time.time()
-    portafogli = generaPortafoliValidi(titoli, vincoli=applicaVincoli, n=10000)
+    portafogli = generaPortafogliValidi(titoli, vincoli=applicaVincoli, n=10000)
     print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
     diversificazione = DiversificazioneIndice()
-    sharpe = SharpeIndice()
+    sharpe = OmegaIndice()
     rischioCorretto = RischioTotaleCorrettoIndice()
 
     v = ValutatoreMultiplo((diversificazione, sharpe, rischioCorretto), (1, -1, 1))

@@ -5,3 +5,5 @@ test.py
 *.data
 *.txt
 README.md
+.venv
+benchmark.py

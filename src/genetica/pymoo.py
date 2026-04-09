@@ -6,7 +6,6 @@ from pymoo.indicators.hv import HV
 import numpy as np
 
 from src.valutazione import ValutatoreMultiplo
-from src.valutazione.sharpe import creaListaBootstrapSharpe, SharpeIndice
 from src.utils.vincoli import applicaVincoli
 from src.managerTitoli import StatsTitoli
 
@@ -16,7 +15,7 @@ class ValidPortfolioSampling(Sampling):
         super().__init__()
         self.nValutazioni = nValutazioni
         self.percentualeMinima = percentualeMinima
-        self.upper = upper
+        self.upper = np.array(upper) if upper is not None else None
         self.minTitoli = minTitoli
 
     def _do(self, problem, n_samples, **kwargs):
@@ -37,7 +36,7 @@ class PortfolioRepair(Repair):
     def __init__(self, percentualeMinima=0.05, upper=None, minTitoli=3):
         super().__init__()
         self.percentualeMinima = percentualeMinima
-        self.upper = upper
+        self.upper = np.array(upper) if upper is not None else None
         self.minTitoli = minTitoli
 
     def _do(self, problem, X, **kwargs):
@@ -61,26 +60,14 @@ class ProblemaPortafoglio(Problem):
         valutatore: ValutatoreMultiplo,
         standardizzato=False,
     ):
-        super().__init__(n_var=nValutazioni, n_obj=3, xl=0.0, xu=1.0)
+        super().__init__(n_var=nValutazioni, n_obj=valutatore.numIndici, xl=0.0, xu=1.0)
 
         self.statsStoriche = statsStoriche
         self.valutatore = valutatore
         self.standardizzato = standardizzato
 
-        self.listaBootstrapSharpe = None
-        for i in self.valutatore.indici:
-            if type(i) is SharpeIndice:
-                print("Trovato sharpe")
-                if i.faiBootstrap:
-                    print("Vuole fare bootstrap")
-                    self.listaBootstrapSharpe = creaListaBootstrapSharpe(self.statsStoriche, nBootstrap=i.nBootstrap)
-                    print("B")
-                    break
-
     def _evaluate(self, X, out, *args, **kwargs):
-        out["F"] = self.valutatore.calcola(
-            X, self.statsStoriche, standardizza=self.standardizzato, bootstrapList=self.listaBootstrapSharpe
-        )
+        out["F"] = self.valutatore.calcola(X, self.statsStoriche, standardizza=self.standardizzato, inverti=True)
 
 
 class EarlyStoppingCallback(Callback):

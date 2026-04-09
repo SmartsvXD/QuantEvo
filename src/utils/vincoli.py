@@ -201,5 +201,79 @@ def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
                                     pesi[i] += add
                                 else:
                                     pesi[r, i] += add
+            # garantiamo infine che nessun peso superi upper_row e che la somma sia 1.0
+            tmp2 = np.empty(n_cols)
+            for i in range(n_cols):
+                v = pesi[i] if is_1d else pesi[r, i]
+                if v < 0.0:
+                    tmp2[i] = 0.0
+                elif v > upper_row[i]:
+                    tmp2[i] = upper_row[i]
+                else:
+                    tmp2[i] = v
 
+            s_tmp = 0.0
+            for i in range(n_cols):
+                s_tmp += tmp2[i]
+
+            if s_tmp == 0.0:
+                mt = minTitoli
+                if mt > n_cols:
+                    mt = n_cols
+                for i in range(n_cols):
+                    if is_1d:
+                        pesi[i] = 0.0
+                    else:
+                        pesi[r, i] = 0.0
+                for i in range(mt):
+                    if is_1d:
+                        pesi[i] = 1.0 / mt
+                    else:
+                        pesi[r, i] = 1.0 / mt
+            else:
+                # distribuisco l'eventuale residuo solo verso asset che non sono al limite superiore
+                resid = 1.0 - s_tmp
+                it = 0
+                # iteriamo al massimo n_cols volte per raggiungere stabilità
+                while (abs(resid) > 1e-12) and (it < n_cols):
+                    free_count = 0
+                    for i in range(n_cols):
+                        if tmp2[i] < (upper_row[i] - 1e-12):
+                            free_count += 1
+
+                    if free_count == 0:
+                        # nessuno può ricevere senza superare upper: esco dal ciclo
+                        break
+
+                    add = resid / free_count
+                    for i in range(n_cols):
+                        if tmp2[i] < (upper_row[i] - 1e-12):
+                            tmp2[i] += add
+                            if tmp2[i] > upper_row[i]:
+                                tmp2[i] = upper_row[i]
+
+                    s_tmp = 0.0
+                    for i in range(n_cols):
+                        s_tmp += tmp2[i]
+                    resid = 1.0 - s_tmp
+                    it += 1
+
+                # se residuo piccolo ma non zero, distribuisco come fallback tra non-zero (potrebbe ignorare upper)
+                if abs(resid) > 1e-12:
+                    non_zero_count = 0
+                    for i in range(n_cols):
+                        if tmp2[i] > 0.0:
+                            non_zero_count += 1
+                    if non_zero_count > 0:
+                        add = resid / non_zero_count
+                        for i in range(n_cols):
+                            if tmp2[i] > 0.0:
+                                tmp2[i] += add
+
+                # assegno il risultato finale (garantito tmp2[i] <= upper_row[i] salvo fallback)
+                for i in range(n_cols):
+                    if is_1d:
+                        pesi[i] = tmp2[i]
+                    else:
+                        pesi[r, i] = tmp2[i]
     return pesi

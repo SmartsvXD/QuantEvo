@@ -3,9 +3,6 @@ from numba import njit
 
 from src.valutazione.indice import Indice
 from src.const import (
-    DEFAULT_PESO_CARD,
-    DEFAULT_MIN_TITOLI_CARD,
-    DEFAULT_EPSILON_CARDINALITA,
     DEFAULT_PESO_MD,
     DEFAULT_PESO_CVAR,
 )
@@ -17,7 +14,7 @@ def _rischioTotale(portafoglio, sigma):
 
 
 class RischioTotaleIndice(Indice):
-    def calcola(self, portafoglio, stats, standardizza=False, **kwargs):
+    def calcola(self, portafoglio, stats, standardizza=False):
         sigma = stats.sigma
         p = np.atleast_2d(portafoglio)
         # p shape: (nPort, nAssets)
@@ -88,45 +85,38 @@ def rischioTailCVar(rendimenti: np.ndarray, alpha: float = 0.05) -> float:
     return out
 
 
-@njit(fastmath=True)
-def penaltyCardinalita(pesi: np.ndarray, minTitoli: int = 3, epsilon: float = 0.01) -> float:
-    p = np.atleast_2d(pesi)
-    counts = np.sum(p > epsilon, axis=1)
-    res = np.where(counts >= minTitoli, 0.0, (minTitoli - counts) / minTitoli)
-    return res.astype(np.float64)
+
 
 
 class RischioTotaleCorrettoIndice(Indice):
     def __init__(
         self,
-        pesoCard=DEFAULT_PESO_CARD,
-        cardMinTitoli=DEFAULT_MIN_TITOLI_CARD,
-        cardEpsilon=DEFAULT_EPSILON_CARDINALITA,
         pesoMD=DEFAULT_PESO_MD,
         pesoCVar=DEFAULT_PESO_CVAR,
     ):
         super().__init__()
 
-        self.pesoCard = pesoCard
-        self.cardMinTitoli = cardMinTitoli
-        self.cardEpsilon = cardEpsilon
         self.pesoMD = pesoMD
         self.pesoCVar = pesoCVar
 
         self.rischioTotale = RischioTotaleIndice()
 
-    def calcola(self, portafoglio, stats, standardizza=False, **kwargs):
+    def calcola(self, portafoglio, stats, standardizza=False):
         p = np.atleast_2d(portafoglio)
 
-        rischio = self.rischioTotale.calcola(p, stats, standardizza=False, **kwargs)
-
-        cardPenalty = penaltyCardinalita(p, minTitoli=self.cardMinTitoli, epsilon=self.cardEpsilon)
+        rischio = self.rischioTotale.calcola(p, stats, standardizza=False)
 
         port_returns = np.nansum(p[:, :, None] * stats.rendimenti[None, :, :], axis=1)
 
         md = maxDrawdown(port_returns)
         cvar = rischioTailCVar(port_returns)
 
-        rischioCorretto = rischio + self.pesoCard * cardPenalty + self.pesoMD * md + self.pesoCVar * cvar
+        # md e cvar sono tipicamente <= 0 sui rendimenti: convertiamo in penalita positive.
+        md_penalty = np.maximum(0.0, -md)
+        cvar_penalty = np.maximum(0.0, -cvar)
+
+        rischioCorretto = (
+            rischio + self.pesoMD * md_penalty + self.pesoCVar * cvar_penalty
+        )
 
         return self.standardizza(rischioCorretto, standardizza=standardizza)

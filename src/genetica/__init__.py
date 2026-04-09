@@ -1,5 +1,6 @@
 from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.optimize import minimize
+from pymoo.termination.max_gen import MaximumGenerationTermination
 from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
 import numpy as np
@@ -10,13 +11,14 @@ from src.genetica.pymoo import ProblemaPortafoglio, ValidPortfolioSampling, Port
 from src.genetica.utils import ordina
 from src.managerTitoli import StatsTitoli
 from src.valutazione import ValutatoreMultiplo
+from src.const import PERCENTUALE_MINIMA_TITOLO
 
 
 def run(
     statsStoriche: StatsTitoli,
     valutatore: ValutatoreMultiplo,
     upper=None,
-    percentualeMinima=0.05,
+    percentualeMinima=PERCENTUALE_MINIMA_TITOLO,
     popSize=600,
     nGen=1500,
     seeds=None,
@@ -53,6 +55,8 @@ def run(
 
         algorithm = NSGA2(popSize=popSize, sampling=sampling, crossover=crossover, mutation=mutation, repair=repair)
 
+        termination = MaximumGenerationTermination(nGen)
+
         callback = None
         if faiEarlyStopping:
             callback = EarlyStoppingCallback(
@@ -62,7 +66,9 @@ def run(
                 ref_point=hv_ref_point,
             )
 
-        res = minimize(problem, algorithm, ("n_gen", nGen), seed=int(s), verbose=verbose, callback=callback)
+            res = minimize(problem, algorithm, termination, seeds=int(s), verbose=verbose, callback=callback)
+        else:
+            res = minimize(problem, algorithm, termination, seeds=int(s), verbose=verbose)
 
         all_F.append(res.F)
         all_X.append(res.X)
@@ -76,33 +82,35 @@ def run(
     ris, port = ordina(F_concat, X_concat, upper=upper, percentualeMinima=percentualeMinima, minTitoli=minTitoli)
 
     if verbose >= 1:
-        print(f"{Fore.MAGENTA}Fatto! {Fore.RESET}({time.time() - t0:.2f}s)")
+        print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
-    return ris, port
+    return port, ris
 
 
 def _test():
     import json
-    
+
     from src.valutazione.sharpe import SharpeIndice
     from src.valutazione.rischio import RischioTotaleCorrettoIndice
     from src.valutazione.diversificazione import DiversificazioneIndice
-    from src.utils.generaPortafogliValidi import generaPortafoliValidi
+    from src.utils.generaPortafogliValidi import generaPortafogliValidi
     from src.utils.vincoli import applicaVincoli
 
     with open("titoli.json", "r") as file:
         titoli = [x[0] for x in json.load(file)]
 
-    s = StatsTitoli(titoli, verbose=1)
+    s = StatsTitoli(titoli, forzaDownload=False, verbose=1)
     s.calcolaStats(verbose=1)
 
-    sharpe = SharpeIndice(faiBootstrap=False)
+    sharpe = SharpeIndice(faiBootstrap=True)
     rischio = RischioTotaleCorrettoIndice()
     div = DiversificazioneIndice()
 
-    v = ValutatoreMultiplo((div, sharpe, rischio), (0,0,0))
-    
-    portafogli = generaPortafoliValidi(titoli, vincoli=applicaVincoli)
+    sharpe.preparaListaBootstrap(s, forzaRicalcolo=False)
+
+    v = ValutatoreMultiplo((div, sharpe, rischio), (False, True, False))
+
+    portafogli = generaPortafogliValidi(titoli, vincoli=applicaVincoli)
     v.fitStandardizza(portafogli, s)
 
-    run(s, v)
+    print(run(s, v)[1][0])

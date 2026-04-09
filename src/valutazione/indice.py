@@ -5,8 +5,8 @@ class Indice:
     def __init__(self):
         self.puoStandardizzare = False
 
-    def fitStandardizza(self, listaPortafogli, stats, **kwargs):
-        valori = self.calcola(listaPortafogli, stats, **kwargs)
+    def fitStandardizza(self, listaPortafogli, stats):
+        valori = self.calcola(listaPortafogli, stats)
 
         self.mu = np.mean(valori)
         self.sigma = np.std(valori)
@@ -19,5 +19,5 @@ class Indice:
         else:
             return valore
 
-    def calcola(self, portafoglio, stats, **kwargs):
+    def calcola(self, portafoglio, stats):
         return None

@@ -1,41 +1,39 @@
-import src.managerTitoli as titoli
 import json
-from colorama import Fore
+
+from src.valutazione.omega import OmegaIndice
+from src.valutazione.rischio import RischioTotaleCorrettoIndice
+from src.valutazione.diversificazione import DiversificazioneIndice
+from src.utils.generaPortafogliValidi import generaPortafogliValidi
+from src.utils.vincoli import applicaVincoli
 from src.genetica import run
-from src.const import DEFAULT_LAMBDA_EWMA
-import numpy as np
+from src.valutazione import ValutatoreMultiplo
+from src.managerTitoli import StatsTitoli
 
 if __name__ == "__main__":
-    with open("./titoli.json", "r") as file:
-        nomiTitoli = json.load(file)
+    with open("titoli.json", "r") as file:
+        data = json.load(file) 
+        
+    titoli = [x[0] for x in data]
+    upper = [x[1] for x in data]
 
-    # Support JSON entries of the form [ticker, upper] or just "ticker"
-    nomi = []
-    upper = []
-    for x in nomiTitoli:
-        if isinstance(x, (list, tuple)):
-            nomi.append(x[0])
-            upper.append(x[1])
-        else:
-            nomi.append(x)
-            upper.append(1.0)
+    s = StatsTitoli(titoli, forzaDownload=0, verbose=1)
+    s.calcolaStats(verbose=1)
 
-    # Convert upper bounds to numpy array for numba-compiled functions
-    upper = np.asarray(upper, dtype=np.float64)
+    omega = OmegaIndice(faiBootstrap=1)
+    rischio = RischioTotaleCorrettoIndice()
+    div = DiversificazioneIndice()
 
-    storico = titoli.download(nomi, forzaDownload=0)
-    # Ensure lambdaEWMA is a numpy array (numba-compiled functions expect ndarray)
-    lambda_arr = np.asarray([DEFAULT_LAMBDA_EWMA for _ in nomi], dtype=np.float64)
-    statsStoriche = titoli.calcolaStatsStoriche(storico, lambda_arr)
+    omega.preparaListaBootstrap(s, forzaRicalcolo=0)
 
-    ris, port = run(statsStoriche, n_gen=250, upper=upper, percentualeMinima=0.07)
+    v = ValutatoreMultiplo((div, omega, rischio), (False, True, False))
 
-    print("\n\n\n")
-    print("")
+    portafogli = generaPortafogliValidi(titoli, vincoli=applicaVincoli)
+    v.fitStandardizza(portafogli, s)
+    
+    port, ris = run(s, v, upper=upper, seeds=range(5))
 
-    for i in reversed(range(5)):
-        print(f"\t{Fore.GREEN}N.{i + 1}{Fore.RESET}")
-        print(f"\t\tVarianza Totale: {ris[i][0]:.2%}; Sharpe: {-ris[i][1]:.2f}; Diversificazione: {ris[i][2]:.2%}")
-        for j in range(len(statsStoriche.nomi)):
-            if port[i][j] != 0:
-                print(f"\t\t{Fore.YELLOW}{statsStoriche.nomi[j]}{Fore.RESET}: {port[i][j]:.2%}")
+    print("\n")
+    for i in range(len(titoli)):
+        print(f"{titoli[i]}: {port[0][i]:.1%}")
+        
+    print(f"\n{v.calcola(port[0], s)}")
