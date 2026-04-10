@@ -53,12 +53,8 @@ def penaltyCardinalita(
         high_pen = np.where(counts <= maxTitoli, 0.0, (counts - maxTitoli) / maxTitoli)
         
         res = low_pen + high_pen
-        # limitiamo la penalità massima a 1.0
-        # res = np.where(res > 1.0, 1.0, res)
         
-    #print(res)
-
-    return res.astype(np.float64)
+    return res
 
 
 class DiversificazioneIndice(Indice):

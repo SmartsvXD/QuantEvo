@@ -27,7 +27,7 @@ class IndiceBootstrap(Indice):
         self,
         faiBootstrap=False,
         nBootstrap=DEFAULT_N_BOOSTRAP,
-        lambdaPenalitaStabilita=0.5,
+        lambdaPenalitaStabilita=0.4,
         usaBlockBootstrap=True,
         lunghezzaBlocco=20,
     ):

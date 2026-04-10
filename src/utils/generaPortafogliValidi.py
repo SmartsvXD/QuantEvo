@@ -4,10 +4,14 @@ import numpy as np
 def generaPortafogliValidi(titoli, n=100, vincoli=None):
     portafogli = np.random.dirichlet(np.ones(len(titoli)), size=n)
 
-    portafogli = vincoli(portafogli)
+    if vincoli is not None:
+        portafogli = vincoli(portafogli)
 
     portafogli = np.round(portafogli, 2)
 
     portafogli = np.unique(portafogli, axis=0)
 
     return portafogli
+
+if __name__ == "__main__":
+    print(generaPortafogliValidi([1,2,3,4]))
