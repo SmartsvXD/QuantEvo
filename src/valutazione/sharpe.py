@@ -76,7 +76,7 @@ class SharpeIndice(IndiceBootstrap):
         super()._calcolaSemplice(portafoglio, stats)
 
         varianzaPortafoglio = self.rischio.calcola(portafoglio, stats)
-        return _sharpeNumba(portafoglio, stats.rendimentoMedioGiornaliero, varianzaPortafoglio, self.RF)
+        return _sharpeNumba(portafoglio, stats["rendimentoMedioGiornaliero"], varianzaPortafoglio, self.RF)
 
     def _calcolaBootstrap(self, portafoglio, stats, randomState=None):
         return super()._calcolaBootstrap(portafoglio, stats, randomState)

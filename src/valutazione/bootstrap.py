@@ -1,25 +1,11 @@
-from numba import njit
 import numpy as np
 import pickle as pk
 import os
 from colorama import Fore
 
 from src.valutazione.indice import Indice
-from src.managerTitoli import StatsTitoli, StatsTitoliSemplice
+from src.managerTitoli import StatsTitoli, calcolaStats
 from src.const import N_PUNTI_BARRA_CARICAMENTO, DEFAULT_N_BOOSTRAP
-
-
-@njit(fastmath=True)
-def _generaIndiciBlockBootstrap(T: int, rng: np.random.Generator, lunghezzaBlocco, nBootstrap):
-    blocco = max(2, min(lunghezzaBlocco, T))
-    n_blocchi = int(np.ceil(T / blocco))
-    start = rng.integers(0, T, size=(nBootstrap, n_blocchi))
-    offset = np.arange(blocco, dtype=np.int64)
-
-    idx = (start[:, :, None] + offset[None, None, :]) % T
-    idx = idx.reshape(nBootstrap, n_blocchi * blocco)
-
-    return idx[:, :T]
 
 
 class IndiceBootstrap(Indice):
@@ -34,9 +20,13 @@ class IndiceBootstrap(Indice):
         super().__init__()
 
         self.faiBootstrap = faiBootstrap
+        # Numero di bootstrap da eseguire. Se <= 0, non viene eseguito alcun bootstrap.
         self.nBootstrap = nBootstrap
+        # Penalità da applicare alla stabilità del portafoglio. Viene calcolata come deviazione standard dei valori di fitness ottenuti dai bootstrap.
         self.lambdaPenalitaStabilita = lambdaPenalitaStabilita
+        # Se True, viene eseguito il block bootstrap invece del bootstrap standard. Il block bootstrap preserva la struttura temporale dei rendimenti, mentre il bootstrap standard mescola i rendimenti senza considerare l'ordine temporale.
         self.usaBlockBootstrap = usaBlockBootstrap
+        # Lunghezza del blocco da utilizzare nel block bootstrap. Deve essere almeno 2 e non può superare il numero di rendimenti disponibili.
         self.lunghezzaBlocco = max(2, int(lunghezzaBlocco))
 
         self.listaBootstrap = []
@@ -75,14 +65,23 @@ class IndiceBootstrap(Indice):
             rng = np.random.default_rng(randomState)
 
             if self.usaBlockBootstrap:
-                idxs = _generaIndiciBlockBootstrap(T, rng, self.lunghezzaBlocco, self.nBootstrap)
+                blocco = max(2, min(self.lunghezzaBlocco, T))
+                n_blocchi = int(np.ceil(T / blocco))
+                start = rng.integers(0, T, size=(self.nBootstrap, n_blocchi))
+                offset = np.arange(blocco, dtype=np.int64)
+
+                idx = (start[:, :, None] + offset[None, None, :]) % T
+                idx = idx.reshape(self.nBootstrap, n_blocchi * blocco)
+
+                idxs = idx[:, :T]
             else:
                 idxs = rng.integers(0, T, size=(self.nBootstrap, T))
 
             for i in range(len(idxs)):
                 sample = stats.rendimenti[:, idxs[i]]
-                s = StatsTitoliSemplice(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
-                s.calcolaStats()
+                s = calcolaStats(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
+                s["rendimenti"] = sample
+                
                 self.listaBootstrap.append(s)
 
                 if verbose and i % 10 == 0:
@@ -102,7 +101,7 @@ class IndiceBootstrap(Indice):
 
     def _calcolaSemplice(self, portafoglio, stats):
         # Base no-op. Subclassi devono sovrascrivere questa funzione.
-        # Accetta come `stats` sia un oggetto `StatsTitoli`/`StatsTitoliSemplice`
+        # Accetta come `stats` sia un dizionario di statiistiche
         # sia una matrice di rendimenti; il codice di bootstrap costruisce
         # oggetti `StatsTitoliSemplice` prima di chiamare l'implementazione della sottoclasse.
         return None
@@ -115,7 +114,15 @@ class IndiceBootstrap(Indice):
 
         rng = np.random.default_rng(randomState)
         if self.usaBlockBootstrap:
-            idxs = _generaIndiciBlockBootstrap(T, rng, self.lunghezzaBlocco, self.nBootstrap)
+            blocco = max(2, min(self.lunghezzaBlocco, T))
+            n_blocchi = int(np.ceil(T / blocco))
+            start = rng.integers(0, T, size=(self.nBootstrap, n_blocchi))
+            offset = np.arange(blocco, dtype=np.int64)
+
+            idx = (start[:, :, None] + offset[None, None, :]) % T
+            idx = idx.reshape(self.nBootstrap, n_blocchi * blocco)
+
+            idxs = idx[:, :T]
         else:
             idxs = rng.integers(0, T, size=(self.nBootstrap, T))
 
@@ -127,8 +134,8 @@ class IndiceBootstrap(Indice):
 
         for i in range(len(idxs)):
             sample = stats.rendimenti[:, idxs[i]]
-            s = StatsTitoliSemplice(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
-            s.calcolaStats()
+            s = calcolaStats(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
+            s["rendimenti"] = sample
 
             res_i = self._calcolaSemplice(p, s)
             res_i = np.atleast_1d(res_i)

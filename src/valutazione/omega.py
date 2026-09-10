@@ -9,44 +9,33 @@ from src.const import GIORNI_IN_UN_ANNO, DEFAULT_N_BOOSTRAP, MIN_OMEGA_VALUE
 
 @njit(fastmath=True)
 def _omegaNumba(portafoglio, samples, soglia):
-    # portafoglio: (n_portafogli, n_asset) or (n_asset,) -> at least 2d
-    # samples: (n_asset, n_samples) rendimenti giornalieri
-    # soglia: valore giornaliero soglia (non annualizzato)
     portafoglio = np.atleast_2d(portafoglio)
+    n_port, n_asset = portafoglio.shape
+    n_samples = samples.shape[1]
 
-    # calcola rendimenti per tutti i portafogli in una singola operazione
-    # portafoglio (n_port, n_asset) dot samples (n_asset, n_samples) -> (n_port, n_samples)
-    port_returns = np.dot(portafoglio, samples)
+    omega_vals = np.empty(n_port, dtype=np.float64)
 
-    # differenze rispetto alla soglia (broadcast)
-    diff = port_returns - soglia
+    for i in range(n_port):
+        up = 0.0
+        down = 0.0
+        for t in range(n_samples):
+            # Calcolo del rendimento al volo senza allocare array
+            ret = 0.0
+            for a in range(n_asset):
+                ret += portafoglio[i, a] * samples[a, t]
 
-    # somme dei guadagni sopra soglia e delle perdite sotto soglia per ogni portafoglio
-    up = np.sum(np.maximum(diff, 0.0), axis=1)
-    down = np.sum(np.maximum(-diff, 0.0), axis=1)
+            diff = ret - soglia
+            if diff > 0.0:
+                up += diff
+            else:
+                down -= diff  # equivale a +(-diff)
 
-    # costruisci risultato vettorialmente (gestendo casi di down ~= 0)
-    omega_vals = np.where(down < 1e-12, np.where(up > 0.0, 1e12, 0.0), up / down)
+        if down < 1e-12:
+            omega_vals[i] = 1e12 if up > 0.0 else 0.0
+        else:
+            omega_vals[i] = up / down
 
     return omega_vals
-
-
-@njit(fastmath=True)
-def _calcolaCAGR(portafoglio, rendimentoMedioGiornaliero):
-    # portafoglio: (n_portafogli, n_asset) or (n_asset,) -> at least 2d
-    # rendimentoMedioGiornaliero: vector of daily log-returns (n_asset,)
-    portafoglio = np.atleast_2d(portafoglio)
-
-    # rendimento medio giornaliero atteso per ogni portafoglio
-    rendimento_port_daily = np.dot(portafoglio, rendimentoMedioGiornaliero)
-
-    # CAGR: annualizziamo i log-return medi giornalieri
-    cagr_vals = np.exp(rendimento_port_daily * GIORNI_IN_UN_ANNO) - 1.0
-
-    # gestiamo possibili NaN
-    cagr_vals = np.where(np.isnan(cagr_vals), 0.0, cagr_vals)
-
-    return cagr_vals
 
 
 class OmegaIndice(IndiceBootstrap):
@@ -84,7 +73,7 @@ class OmegaIndice(IndiceBootstrap):
         # chiamiamo eventuale comportamento comune
         super()._calcolaSemplice(portafoglio, stats)
 
-        return _omegaNumba(portafoglio, stats.rendimenti, self._sogliaGiornaliera)
+        return _omegaNumba(portafoglio, stats["rendimenti"], self._sogliaGiornaliera)
 
     def _calcolaBootstrap(self, portafoglio, stats, randomState=None):
         return super()._calcolaBootstrap(portafoglio, stats, randomState)
@@ -100,7 +89,19 @@ class CAGROmegaIndice(OmegaIndice):
     def calcola(self, portafoglio, stats, standardizza=False):
         omega = super().calcola(portafoglio, stats, standardizza=False)
 
-        cagr = _calcolaCAGR(portafoglio, stats.rendimentoMedioGiornaliero)
+        # portafoglio: (n_portafogli, n_asset) or (n_asset,) -> at least 2d
+        # rendimentoMedioGiornaliero: vector of daily log-returns (n_asset,)
+        portafoglio = np.atleast_2d(portafoglio)
+        rendimentoMedioGiornaliero = stats.rendimentoMedioGiornaliero
+
+        # rendimento medio giornaliero atteso per ogni portafoglio
+        rendimento_port_daily = np.dot(portafoglio, rendimentoMedioGiornaliero)
+
+        # CAGR: annualizziamo i log-return medi giornalieri
+        cagr = np.exp(rendimento_port_daily * GIORNI_IN_UN_ANNO) - 1.0
+
+        # gestiamo possibili NaN
+        cagr = np.where(np.isnan(cagr), 0.0, cagr)
 
         p = cagr * (omega - MIN_OMEGA_VALUE)
         penalized_mask = (cagr < 0.0) | (omega < MIN_OMEGA_VALUE)

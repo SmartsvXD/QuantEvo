@@ -2,12 +2,7 @@ import numpy as np
 from numba import njit
 
 from src.valutazione.indice import Indice
-from src.const import (
-    DEFAULT_PESO_CARD,
-    DEFAULT_MIN_TITOLI_CARD,
-    DEFAULT_EPSILON_CARDINALITA,
-    DEFAULT_MAX_TITOLI_CARD
-)
+from src.const import DEFAULT_PESO_CARD, DEFAULT_MIN_TITOLI_CARD, DEFAULT_EPSILON_CARDINALITA, DEFAULT_MAX_TITOLI_CARD
 
 
 @njit(fastmath=True)
@@ -32,6 +27,7 @@ def _diversificazione(portafoglio, quadCorr):
 
     return (1.0 - enb_norm) + hhi_norm
 
+
 @njit(fastmath=True)
 def penaltyCardinalita(
     pesi: np.ndarray,
@@ -39,45 +35,56 @@ def penaltyCardinalita(
     epsilon: float = 0.01,
     maxTitoli: int = -1,
 ) -> np.ndarray:
-    p = np.atleast_2d(pesi)
-    counts = np.sum(p > epsilon, axis=1)
+    n_rows, n_cols = pesi.shape
+    res = np.zeros(n_rows, dtype=np.float64)
 
-    # penalità per avere meno di minTitoli
-    low_pen = np.where(counts >= minTitoli, 0.0, (minTitoli - counts) / minTitoli)
+    inv_min = 1.0 / minTitoli
+    inv_max = 1.0 / maxTitoli if maxTitoli > 0 else 0.0
 
-    # se maxTitoli <= 0 non applichiamo la penalità alta
-    if maxTitoli <= 0:
-        res = low_pen
-    else:
-        # penalità per avere più di maxTitoli
-        high_pen = np.where(counts <= maxTitoli, 0.0, (counts - maxTitoli) / maxTitoli)
-        
-        res = low_pen + high_pen
-        
+    for i in range(n_rows):
+        # Conteggio inline senza allocare matrici booleane
+        count = 0
+        for j in range(n_cols):
+            if pesi[i, j] > epsilon:
+                count += 1
+
+        pen = 0.0
+        if count < minTitoli:
+            pen += (minTitoli - count) * inv_min
+
+        if maxTitoli > 0 and count > maxTitoli:
+            pen += (count - maxTitoli) * inv_max
+
+        res[i] = pen
+
     return res
 
 
 class DiversificazioneIndice(Indice):
-    def __init__(self,
+    def __init__(
+        self,
         pesoCard=DEFAULT_PESO_CARD,
         cardMinTitoli=DEFAULT_MIN_TITOLI_CARD,
         cardMaxTitoli=DEFAULT_MAX_TITOLI_CARD,
-        cardEpsilon=DEFAULT_EPSILON_CARDINALITA,):
-        
+        cardEpsilon=DEFAULT_EPSILON_CARDINALITA,
+    ):
+
         self.pesoCard = pesoCard
         self.cardMinTitoli = cardMinTitoli
         self.cardMaxTitoli = cardMaxTitoli
         self.cardEpsilon = cardEpsilon
-        
+
         super().__init__()
-    
+
     def calcola(self, portafoglio, stats, standardizza=False):
         portafoglio = np.atleast_2d(portafoglio)
-        
+
         quadCorr = np.einsum("pi,ij,pj->p", portafoglio, stats.corr, portafoglio)
-        
+
         val = _diversificazione(portafoglio, quadCorr)
-        
-        val += self.pesoCard * penaltyCardinalita(portafoglio, minTitoli=self.cardMinTitoli, maxTitoli=self.cardMaxTitoli, epsilon=self.cardEpsilon)
-        
+
+        val += self.pesoCard * penaltyCardinalita(
+            portafoglio, minTitoli=self.cardMinTitoli, maxTitoli=self.cardMaxTitoli, epsilon=self.cardEpsilon
+        )
+
         return self.standardizza(val, standardizza=standardizza)

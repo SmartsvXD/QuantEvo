@@ -53,6 +53,7 @@ def ordina(F, X, upper=None, percentualeMinima=0.05, minTitoli=3, sum_tol=1e-2):
             continue
 
     if len(invalid) > 0:
+        print(f"Scartate {len(invalid)} soluzioni non valide su {X.shape[0]} totali.")
         invalid = np.unique(np.array(invalid, dtype=np.int64))
         X = np.delete(X, invalid, axis=0)
         F = np.delete(F, invalid, axis=0)

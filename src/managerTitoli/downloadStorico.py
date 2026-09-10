@@ -46,7 +46,7 @@ def _downloadYFinance(nomi: tuple, anni: int) -> tuple[np.ndarray, np.ndarray, n
 
     adjClose = adjClose[nomi]
 
-    # * Filtra ticker con almeno che non rispettano un limite minimo di giorni di dati
+    # * Filtra ticker che non rispettano un limite minimo di giorni di dati
     nomi_invalidi = [ticker for ticker in nomi if len(adjClose[ticker].dropna()) <= GIORNI_MINIMI_VALIDITA]
     if nomi_invalidi != []:
         print(f"{Fore.RED} I seguenti titoli non hanno un numero sufficiente di giorni di dati:")
@@ -87,6 +87,7 @@ def download(
     scarica = 0
 
     t0 = time.time()
+    OGGI = dt.datetime.now(tz=dt.timezone.utc).date()
 
     # * Verifichiamo se dovremmo scaricare o meno
     # Se non esiste un cache o è forzato devi scaricare
@@ -97,11 +98,8 @@ def download(
         with open("./data/infoDownload.data", "rb") as file:
             info = pk.load(file)
 
-        # Se il cache è più vecchio di un giorno non va bene
-        if (dt.date.today() - info["data"]).days >= 1:
-            scarica = 1
-        # Se il cache non contiene gli stessi non va bene
-        elif info["titoli"] != nomi or info["fonte"] != fonte or info["anni"] != anni:
+        # Se il cache è più vecchio di un giorn o se non contiene gli stessi titoli non va bene
+        if ((OGGI - info["data"]).days >= 1) or info["titoli"] != nomi or info["fonte"] != fonte or info["anni"] != anni:
             scarica = 1
         else:
             scarica = 0
@@ -120,8 +118,6 @@ def download(
             print(f"{Fore.RED}ERRORE! Impossibile scaricare i dati!{Fore.RESET}")
             return None
 
-        rendimenti = np.array(rendimenti)
-
         # Salviamo i nuovi dati scaricati
         if verbose:
             print(
@@ -129,7 +125,7 @@ def download(
             )
 
         # Salviamo le info
-        info = {"data": dt.date.today(), "titoli": nomi, "fonte": fonte, "anni": anni}
+        info = {"data": OGGI, "titoli": nomi, "fonte": fonte, "anni": anni}
         with open("./data/infoDownload.data", "wb") as file:
             pk.dump(info, file)
 

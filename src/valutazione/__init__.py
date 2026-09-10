@@ -7,7 +7,7 @@ from src.const import N_PUNTI_BARRA_CARICAMENTO
 
 
 class ValutatoreMultiplo:
-    def __init__(self, indici: tuple, inverti: tuple = None):
+    def __init__(self, indici: tuple, inverti: tuple | None = None):
         self._indici = indici
         if inverti is None:
             self._inverti = np.ones(len(self._indici))
@@ -23,10 +23,12 @@ class ValutatoreMultiplo:
         t0 = time.time()
 
         for n, i in enumerate(self._indici):
+            # Barra di caricamento
             filled = round(n / len(self._indici) * N_PUNTI_BARRA_CARICAMENTO)
             empty = N_PUNTI_BARRA_CARICAMENTO - filled
             print(f"\r{Fore.LIGHTBLACK_EX}{n}/{len(self._indici)} [{'*' * filled}{' ' * empty}]{Fore.RESET}", end="")
 
+            # Vera e propria standardizzazione
             i.fitStandardizza(listaPortafogli, stats)
 
         print(

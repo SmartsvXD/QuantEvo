@@ -12,6 +12,7 @@ from src.genetica.utils import ordina
 from src.managerTitoli import StatsTitoli
 from src.valutazione import ValutatoreMultiplo
 from src.const import PERCENTUALE_MINIMA_TITOLO
+from pymoo.termination import get_termination
 
 
 def run(
@@ -19,8 +20,8 @@ def run(
     valutatore: ValutatoreMultiplo,
     upper=None,
     percentualeMinima=PERCENTUALE_MINIMA_TITOLO,
-    popSize=600,
-    nGen=1500,
+    popSize=100,
+    nGen=500,
     seeds=None,
     faiEarlyStopping=True,
     pazienzaEarlyStopping=40,
@@ -34,48 +35,47 @@ def run(
         print(f"\n{Fore.MAGENTA}Esecuzione dell'algoritmo evolutivo...{Fore.LIGHTBLACK_EX}")
 
     nValutazioni = len(statsStoriche.nomi)
+    seeds = seeds if seeds is not None else [1]
 
-    all_F = []
-    all_X = []
-
-    if seeds is None:
-        seeds = [1]
+    all_F, all_X = [], []
 
     for s in seeds:
-        # ensure reproducibility for numpy-based samplers and procedures
-        np.random.seed(int(s))
+        seed_int = int(s)
+        np.random.seed(seed_int)
+
         problem = ProblemaPortafoglio(statsStoriche, nValutazioni, valutatore=valutatore)
 
         sampling = ValidPortfolioSampling(
             nValutazioni, percentualeMinima=percentualeMinima, upper=upper, minTitoli=minTitoli
         )
-
         repair = PortfolioRepair(percentualeMinima=percentualeMinima, upper=upper, minTitoli=minTitoli)
 
-        crossover = SBX(prob=0.9, eta=20)
-        mutation = PM(prob=0.15, eta=25)
+        algorithm = NSGA2(
+            pop_size=popSize,  # Corretto da popSize a pop_size
+            sampling=sampling,
+            crossover=SBX(prob=0.9, eta=20),
+            mutation=PM(prob=0.15, eta=25),
+            repair=repair,
+        )
 
-        algorithm = NSGA2(popSize=popSize, sampling=sampling, crossover=crossover, mutation=mutation, repair=repair)
-
-        termination = MaximumGenerationTermination(nGen)
+        termination = get_termination("n_gen", nGen)
 
         callback = None
         if faiEarlyStopping:
             callback = EarlyStoppingCallback(
                 patience=pazienzaEarlyStopping,
                 min_improvement=1e-5,
-                verbose=verbose - 1,
+                verbose=max(0, verbose - 1),
                 ref_point=hv_ref_point,
             )
 
-            res = minimize(problem, algorithm, termination, seed=int(s), verbose=verbose, callback=callback)
-        else:
-            res = minimize(problem, algorithm, termination, seed=int(s), verbose=verbose)
+        res = minimize(problem, algorithm, termination, seed=seed_int, verbose=bool(verbose), callback=callback)
 
-        all_F.append(res.F)
-        all_X.append(res.X)
+        if res.X is not None and len(res.X) > 0:
+            all_F.append(np.atleast_2d(res.F))
+            all_X.append(np.atleast_2d(res.X))
 
-    if len(all_F) == 0:
+    if not all_F:
         return [], []
 
     F_concat = np.vstack(all_F)
