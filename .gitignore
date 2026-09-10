@@ -4,6 +4,6 @@ test.py
 *.json
 *.data
 *.txt
-README.md
+*.md
 .venv
 benchmark.py

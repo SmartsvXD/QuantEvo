@@ -42,6 +42,8 @@ def run(
         seeds = [1]
 
     for s in seeds:
+        # ensure reproducibility for numpy-based samplers and procedures
+        np.random.seed(int(s))
         problem = ProblemaPortafoglio(statsStoriche, nValutazioni, valutatore=valutatore)
 
         sampling = ValidPortfolioSampling(
@@ -66,9 +68,9 @@ def run(
                 ref_point=hv_ref_point,
             )
 
-            res = minimize(problem, algorithm, termination, seeds=int(s), verbose=verbose, callback=callback)
+            res = minimize(problem, algorithm, termination, seed=int(s), verbose=verbose, callback=callback)
         else:
-            res = minimize(problem, algorithm, termination, seeds=int(s), verbose=verbose)
+            res = minimize(problem, algorithm, termination, seed=int(s), verbose=verbose)
 
         all_F.append(res.F)
         all_X.append(res.X)

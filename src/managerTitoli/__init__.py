@@ -97,15 +97,39 @@ class StatsTitoliSemplice:
         self.sigma = _calcolaStatsB(self.stdRendimentiGiornaliera, self.corr)
 
     def __eq__(self, other):
-        return (
-            self._lambdaEWMA == other._lambdaEWMA
-            and self._shrink == other._shrink
-            and self.rendimentoMedioGiornaliero.all() == other.rendimentoMedioGiornaliero.all()
-            and self.stdRendimentiGiornaliera.all() == other.stdRendimentiGiornaliera.all()
-            and self.corr.all() == other.corr.all()
-            and self.sigma.all() == other.sigma.all()
-            and self.rendimenti.all() == other.rendimenti.all()
-        )
+        if not isinstance(other, StatsTitoliSemplice):
+            return False
+
+        try:
+            cmp_rend_med = (
+                self.rendimentoMedioGiornaliero is None and other.rendimentoMedioGiornaliero is None
+            ) or np.allclose(self.rendimentoMedioGiornaliero, other.rendimentoMedioGiornaliero, rtol=1e-8, atol=1e-12)
+
+            cmp_std = (
+                self.stdRendimentiGiornaliera is None and other.stdRendimentiGiornaliera is None
+            ) or np.allclose(self.stdRendimentiGiornaliera, other.stdRendimentiGiornaliera, rtol=1e-8, atol=1e-12)
+
+            cmp_corr = (
+                self.corr is None and other.corr is None
+            ) or np.allclose(self.corr, other.corr, rtol=1e-8, atol=1e-12)
+
+            cmp_sigma = (
+                self.sigma is None and other.sigma is None
+            ) or np.allclose(self.sigma, other.sigma, rtol=1e-8, atol=1e-12)
+
+            cmp_rendimenti = np.array_equal(self.rendimenti, other.rendimenti)
+
+            return (
+                self._lambdaEWMA == other._lambdaEWMA
+                and self._shrink == other._shrink
+                and cmp_rend_med
+                and cmp_std
+                and cmp_corr
+                and cmp_sigma
+                and cmp_rendimenti
+            )
+        except Exception:
+            return False
 
 
 class StatsTitoli(StatsTitoliSemplice):

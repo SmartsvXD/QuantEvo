@@ -30,7 +30,7 @@ if __name__ == "__main__":
     portafogli = generaPortafogliValidi(titoli, vincoli=applicaVincoli)
     v.fitStandardizza(portafogli, s)
 
-    port, ris = run(s, v, upper=upper, seeds=range(3))
+    port, ris = run(s, v, upper=upper, seeds = None)
 
     print("\n")
     for i in range(len(titoli)):

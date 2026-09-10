@@ -8,11 +8,6 @@ from src.const import (
 )
 
 
-@njit(fastmath=True)
-def _rischioTotale(portafoglio, sigma):
-    return np.dot(portafoglio.T, np.dot(sigma, portafoglio))
-
-
 class RischioTotaleIndice(Indice):
     def calcola(self, portafoglio, stats, standardizza=False):
         sigma = stats.sigma
@@ -26,15 +21,17 @@ class RischioTotaleIndice(Indice):
 @njit(fastmath=True)
 def maxDrawdown(rendimenti: np.ndarray):
     R = np.atleast_2d(rendimenti)
-    # replace NaN with 0.0 for cumulative product
     R = np.where(np.isnan(R), 0.0, R)
+
+    if R.shape[1] == 0:
+        return np.zeros(R.shape[0], dtype=np.float64)
 
     cumulative = np.empty((R.shape[0], R.shape[1]), dtype=np.float64)
     for i in range(R.shape[0]):
-        prod = 1.0
+        log_wealth = 0.0
         for t in range(R.shape[1]):
-            prod *= 1.0 + R[i, t]
-            cumulative[i, t] = prod
+            log_wealth += R[i, t]
+            cumulative[i, t] = np.exp(log_wealth)
 
     runningMax = np.empty((R.shape[0], R.shape[1]), dtype=np.float64)
     for i in range(R.shape[0]):
@@ -115,8 +112,27 @@ class RischioTotaleCorrettoIndice(Indice):
         md_penalty = np.maximum(0.0, -md)
         cvar_penalty = np.maximum(0.0, -cvar)
 
+        # Normalizza le componenti su scala comparabile per evitare mixing di unita' eterogenee.
+        # Per input singolo non normalizziamo per preservare monotonicita' locale.
+        if p.shape[0] > 1:
+            r_mu, r_sigma = np.mean(rischio), np.std(rischio)
+            md_mu, md_sigma = np.mean(md_penalty), np.std(md_penalty)
+            cv_mu, cv_sigma = np.mean(cvar_penalty), np.std(cvar_penalty)
+
+            r_sigma = max(r_sigma, 1e-12)
+            md_sigma = max(md_sigma, 1e-12)
+            cv_sigma = max(cv_sigma, 1e-12)
+
+            rischio_n = (rischio - r_mu) / r_sigma
+            md_n = (md_penalty - md_mu) / md_sigma
+            cvar_n = (cvar_penalty - cv_mu) / cv_sigma
+        else:
+            rischio_n = rischio
+            md_n = md_penalty
+            cvar_n = cvar_penalty
+
         rischioCorretto = (
-            rischio + self.pesoMD * md_penalty + self.pesoCVar * cvar_penalty
+            rischio_n + self.pesoMD * md_n + self.pesoCVar * cvar_n
         )
 
         return self.standardizza(rischioCorretto, standardizza=standardizza)

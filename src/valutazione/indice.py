@@ -10,6 +10,7 @@ class Indice:
 
         self.mu = np.mean(valori)
         self.sigma = np.std(valori)
+        self.sigma = max(self.sigma, 1e-6)
 
         self.puoStandardizzare = True
 

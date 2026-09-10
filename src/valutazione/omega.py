@@ -62,7 +62,10 @@ class OmegaIndice(IndiceBootstrap):
         super().__init__(faiBootstrap, nBootstrap, lambdaPenalitaStabilita, usaBlockBootstrap, lunghezzaBlocco)
 
         # soglia annuale (es. 0 per zero target, o risk-free rate annuale se desiderato)
-        self._sogliaGiornaliera = sogliaAnnua / GIORNI_IN_UN_ANNO
+        if sogliaAnnua <= -1.0:
+            self._sogliaGiornaliera = sogliaAnnua / GIORNI_IN_UN_ANNO
+        else:
+            self._sogliaGiornaliera = np.log1p(sogliaAnnua) / GIORNI_IN_UN_ANNO
 
     def preparaListaBootstrap(self, stats, randomState=None, forzaRicalcolo=True, verbose=True):
         pathStats = "./data/statsBootstrapOmega.data"
@@ -99,6 +102,8 @@ class CAGROmegaIndice(OmegaIndice):
 
         cagr = _calcolaCAGR(portafoglio, stats.rendimentoMedioGiornaliero)
 
-        totale = cagr * (omega - MIN_OMEGA_VALUE)
+        p = cagr * (omega - MIN_OMEGA_VALUE)
+        penalized_mask = (cagr < 0.0) | (omega < MIN_OMEGA_VALUE)
+        totale = np.where(penalized_mask, -np.abs(p), p)
 
         return self.standardizza(totale, standardizza)

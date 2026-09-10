@@ -9,13 +9,11 @@ from src.const import N_PUNTI_BARRA_CARICAMENTO
 class ValutatoreMultiplo:
     def __init__(self, indici: tuple, inverti: tuple = None):
         self._indici = indici
-
-        if len(self._indici) != len(inverti):
-            raise Exception("Il numero di indici e di pesi deve essere lo stesso")
-
         if inverti is None:
             self._inverti = np.ones(len(self._indici))
         else:
+            if len(self._indici) != len(inverti):
+                raise Exception("Il numero di indici e di pesi deve essere lo stesso")
             self._inverti = np.ones(len(self._indici)) - 2 * np.array(inverti, bool)
             
         self.numIndici = len(self._indici) 

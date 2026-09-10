@@ -40,7 +40,7 @@ class IndiceBootstrap(Indice):
         self.lunghezzaBlocco = max(2, int(lunghezzaBlocco))
 
         self.listaBootstrap = []
-    
+
     def preparaListaBootstrap(
         self,
         stats: StatsTitoli,
@@ -101,25 +101,41 @@ class IndiceBootstrap(Indice):
                 pk.dump(self.listaBootstrap, file)
 
     def _calcolaSemplice(self, portafoglio, stats):
-        return 0
+        # Base no-op. Subclassi devono sovrascrivere questa funzione.
+        # Accetta come `stats` sia un oggetto `StatsTitoli`/`StatsTitoliSemplice`
+        # sia una matrice di rendimenti; il codice di bootstrap costruisce
+        # oggetti `StatsTitoliSemplice` prima di chiamare l'implementazione della sottoclasse.
+        return None
 
     def _calcolaBootstrap(self, portafoglio: np.ndarray, stats: StatsTitoli, randomState=None):
         T = stats.rendimenti.shape[1]
 
         if T < 2 or self.nBootstrap <= 0:
-            return self._sharpeSemplice(portafoglio, stats)
+            return self._calcolaSemplice(portafoglio, stats)
 
         rng = np.random.default_rng(randomState)
         if self.usaBlockBootstrap:
-            idx = _generaIndiciBlockBootstrap(T, rng, self.lunghezzaBlocco, self.nBootstrap)
+            idxs = _generaIndiciBlockBootstrap(T, rng, self.lunghezzaBlocco, self.nBootstrap)
         else:
-            idx = rng.integers(0, T, size=(self.nBootstrap, T))
-
-        samples = stats.rendimenti[:, idx]
+            idxs = rng.integers(0, T, size=(self.nBootstrap, T))
 
         p = np.atleast_2d(portafoglio)
+        n_port = p.shape[0]
 
-        vals = self._calcolaSemplice(p, samples)
+        # raccogli i risultati per ogni bootstrap (shape: n_port, nBootstrap)
+        vals = np.empty((n_port, len(idxs)), dtype=np.float64)
+
+        for i in range(len(idxs)):
+            sample = stats.rendimenti[:, idxs[i]]
+            s = StatsTitoliSemplice(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
+            s.calcolaStats()
+
+            res_i = self._calcolaSemplice(p, s)
+            res_i = np.atleast_1d(res_i)
+            if res_i.ndim > 1:
+                res_i = res_i.ravel()
+
+            vals[:, i] = res_i
 
         media = np.mean(vals, axis=1)
         deviazione = np.std(vals, axis=1)
@@ -129,14 +145,14 @@ class IndiceBootstrap(Indice):
 
     def _calcolaBootstrapFitness(self, portafoglio):
         if len(self.listaBootstrap) == 1:
-            return self._sharpeSemplice(portafoglio, self.listaBootstrap[0])
+            return self._calcolaSemplice(portafoglio, self.listaBootstrap[0])
 
         fitness_values = np.array([self._calcolaSemplice(portafoglio, s) for s in self.listaBootstrap])
 
         media = np.mean(fitness_values, axis=0)
         deviazione = np.std(fitness_values, axis=0)
         return media - self.lambdaPenalitaStabilita * deviazione
-    
+
     def calcola(self, portafoglio, stats, standardizza=False):
         if self.faiBootstrap:
             if self.listaBootstrap != []:

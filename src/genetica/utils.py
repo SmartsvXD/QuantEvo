@@ -57,8 +57,13 @@ def ordina(F, X, upper=None, percentualeMinima=0.05, minTitoli=3, sum_tol=1e-2):
         X = np.delete(X, invalid, axis=0)
         F = np.delete(F, invalid, axis=0)
 
-    w = np.array(DEFAULT_PESI_VALUTAZIONE)
+    w = np.array(DEFAULT_PESI_VALUTAZIONE, dtype=np.float64)
     if F.size == 0:
         return F, X
+
+    n_obj = F.shape[1]
+    if w.size != n_obj:
+        w = np.ones(n_obj, dtype=np.float64) / n_obj
+
     indici = np.argsort(np.sum(F * w, axis=1))
     return F[indici], X[indici]

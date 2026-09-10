@@ -60,19 +60,30 @@ def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
                 s += pesi[r, i]
 
         if s == 0.0:
-            mt = minTitoli
-            if mt > n_cols:
-                mt = n_cols
+            sum_upper = 0.0
+            for i in range(n_cols):
+                sum_upper += upper_row[i]
+
             for i in range(n_cols):
                 if is_1d:
                     pesi[i] = 0.0
                 else:
                     pesi[r, i] = 0.0
-            for i in range(mt):
-                if is_1d:
-                    pesi[i] = 1.0 / mt
-                else:
-                    pesi[r, i] = 1.0 / mt
+
+            if sum_upper >= 1.0:
+                for i in range(n_cols):
+                    v = upper_row[i] / sum_upper
+                    if is_1d:
+                        pesi[i] = v
+                    else:
+                        pesi[r, i] = v
+            else:
+                # vincoli non pienamente fattibili: saturiamo a upper
+                for i in range(n_cols):
+                    if is_1d:
+                        pesi[i] = upper_row[i]
+                    else:
+                        pesi[r, i] = upper_row[i]
             continue
 
         for i in range(n_cols):
@@ -217,19 +228,29 @@ def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
                 s_tmp += tmp2[i]
 
             if s_tmp == 0.0:
-                mt = minTitoli
-                if mt > n_cols:
-                    mt = n_cols
+                sum_upper = 0.0
+                for i in range(n_cols):
+                    sum_upper += upper_row[i]
+
                 for i in range(n_cols):
                     if is_1d:
                         pesi[i] = 0.0
                     else:
                         pesi[r, i] = 0.0
-                for i in range(mt):
-                    if is_1d:
-                        pesi[i] = 1.0 / mt
-                    else:
-                        pesi[r, i] = 1.0 / mt
+
+                if sum_upper >= 1.0:
+                    for i in range(n_cols):
+                        v = upper_row[i] / sum_upper
+                        if is_1d:
+                            pesi[i] = v
+                        else:
+                            pesi[r, i] = v
+                else:
+                    for i in range(n_cols):
+                        if is_1d:
+                            pesi[i] = upper_row[i]
+                        else:
+                            pesi[r, i] = upper_row[i]
             else:
                 # distribuisco l'eventuale residuo solo verso asset che non sono al limite superiore
                 resid = 1.0 - s_tmp
@@ -258,19 +279,21 @@ def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
                     resid = 1.0 - s_tmp
                     it += 1
 
-                # se residuo piccolo ma non zero, distribuisco come fallback tra non-zero (potrebbe ignorare upper)
+                # se residuo piccolo ma non zero, distribuisco solo su asset con spazio verso upper
                 if abs(resid) > 1e-12:
-                    non_zero_count = 0
+                    room_count = 0
                     for i in range(n_cols):
-                        if tmp2[i] > 0.0:
-                            non_zero_count += 1
-                    if non_zero_count > 0:
-                        add = resid / non_zero_count
+                        if (tmp2[i] > 0.0) and (tmp2[i] < (upper_row[i] - 1e-12)):
+                            room_count += 1
+                    if room_count > 0:
+                        add = resid / room_count
                         for i in range(n_cols):
-                            if tmp2[i] > 0.0:
+                            if (tmp2[i] > 0.0) and (tmp2[i] < (upper_row[i] - 1e-12)):
                                 tmp2[i] += add
+                                if tmp2[i] > upper_row[i]:
+                                    tmp2[i] = upper_row[i]
 
-                # assegno il risultato finale (garantito tmp2[i] <= upper_row[i] salvo fallback)
+                # assegno il risultato finale
                 for i in range(n_cols):
                     if is_1d:
                         pesi[i] = tmp2[i]

@@ -90,7 +90,7 @@ def download(
 
     # * Verifichiamo se dovremmo scaricare o meno
     # Se non esiste un cache o è forzato devi scaricare
-    if not (os.path.exists("./data/titoliDownload.data")) or forzaDownload:
+    if not (os.path.exists("./data/titoliDownload.data")) or not (os.path.exists("./data/infoDownload.data")) or forzaDownload:
         scarica = 1
     else:
         # Se il file esite e il download non è forzato dovremmo verificare che il cache sia idoneo
@@ -101,10 +101,7 @@ def download(
         if (dt.date.today() - info["data"]).days >= 1:
             scarica = 1
         # Se il cache non contiene gli stessi non va bene
-        elif info["titoli"] != nomi:
-            scarica = 1
-        # Se la fonte è diversa da quella di ora non va bene
-        elif info["fonte"] != fonte:
+        elif info["titoli"] != nomi or info["fonte"] != fonte or info["anni"] != anni:
             scarica = 1
         else:
             scarica = 0
@@ -132,7 +129,7 @@ def download(
             )
 
         # Salviamo le info
-        info = {"data": dt.date.today(), "titoli": nomi, "fonte": fonte}
+        info = {"data": dt.date.today(), "titoli": nomi, "fonte": fonte, "anni": anni}
         with open("./data/infoDownload.data", "wb") as file:
             pk.dump(info, file)
 
@@ -143,7 +140,9 @@ def download(
     # * Carichiamo i dati dal cache
     else:
         if verbose:
-            print(f"\n{Fore.MAGENTA}Caricando i dati da {Fore.RESET}./data/titoliDownload.data{Fore.MAGENTA}...{Fore.RESET}")
+            print(
+                f"\n{Fore.MAGENTA}Caricando i dati da {Fore.RESET}./data/titoliDownload.data{Fore.MAGENTA}...{Fore.RESET}"
+            )
 
         with open("./data/titoliDownload.data", "rb") as file:
             rendimenti = pk.load(file)
