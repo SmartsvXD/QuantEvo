@@ -6,109 +6,171 @@ from numba import njit
 def _proietta_riga(w, pct_min, upper_arr, min_titoli):
     n = w.shape[0]
 
-    # 1. Filtro iniziale e clamp superiore
+    # Tolleranza per garantire che l'asset attivo sia > pct_min (evita lo scarto in utils.py:38)
+    eps_min = 1e-7 if min_titoli * (pct_min + 1e-7) <= 1.0 else 0.0
+    pct_min_eff = pct_min + eps_min
+
+    # 1. Filtro asset eleggibili e penalizzazione dei non eleggibili
+    scores = np.full(n, -1e30)
+    n_elig = 0
     for i in range(n):
-        if w[i] < pct_min:
+        if upper_arr[i] >= pct_min:
+            scores[i] = w[i]
+            n_elig += 1
+        else:
             w[i] = 0.0
-        elif w[i] > upper_arr[i]:
-            w[i] = upper_arr[i]
 
-    # 2. Controllo e correzione Cardinalità
-    k_target = min(min_titoli, n)
-    n_active = 0
+    if n_elig < min_titoli:
+        raise ValueError("Asset eleggibili inferiori a minTitoli")
+
+    # 2. Ordinamento degli asset eleggibili per peso originale decrescente
+    idx_sorted = np.argsort(-scores)
+
+    # 3. Determinazione della cardinalità attiva k
+    k_target = min_titoli
+    max_active = int(1.0 / pct_min)
+    if max_active > n_elig:
+        max_active = n_elig
+
+    n_natural = 0
+    for j in range(n_elig):
+        idx = idx_sorted[j]
+        if scores[idx] >= pct_min:
+            n_natural += 1
+        else:
+            break
+
+    k = n_natural
+    if k < k_target:
+        k = k_target
+    if k > max_active:
+        k = max_active
+
+    # Se la somma dei massimi consentiti è < 1.0, espande il set attivo
+    sum_upper = 0.0
+    for j in range(k):
+        sum_upper += upper_arr[idx_sorted[j]]
+
+    while sum_upper < 1.0 and k < max_active:
+        sum_upper += upper_arr[idx_sorted[k]]
+        k += 1
+
+    # 4. Maschera attivi e azzeramento esclusi
+    is_active = np.zeros(n, dtype=np.bool_)
+    for j in range(k):
+        is_active[idx_sorted[j]] = True
+
     for i in range(n):
-        if w[i] >= pct_min:
-            n_active += 1
+        if not is_active[i]:
+            w[i] = 0.0
 
-    if n_active < k_target:
-        # Seleziona i k_target asset con peso originale maggiore
-        idx_sorted = np.argsort(-w)
-        for k in range(k_target):
-            idx = idx_sorted[k]
-            if w[idx] < pct_min:
-                w[idx] = pct_min
-        n_active = k_target
-
-    # 3. Verifica preliminare di fattibilità
+    # Verifica preliminare di fattibilità sul sottoinsieme selezionato
     sum_min = 0.0
     sum_max = 0.0
-    for i in range(n):
-        if w[i] >= pct_min:
-            sum_min += pct_min
-            sum_max += upper_arr[i]
+    for j in range(k):
+        idx = idx_sorted[j]
+        eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
+        sum_min += eff_lower
+        sum_max += upper_arr[idx]
 
-    if sum_max < 1.0:
-        # Impossibile fare 1.0: saturiamo al massimo consentito
-        for i in range(n):
-            if w[i] >= pct_min:
-                w[i] = upper_arr[i]
-        return
-    elif sum_min > 1.0:
-        # Impossibile rispettare pct_min: fallback equiponderato
-        for i in range(n):
-            if w[i] >= pct_min:
-                w[i] = 1.0 / n_active
-            else:
-                w[i] = 0.0
-        return
+    if sum_max < 1.0 - 1e-12 or sum_min > 1.0 + 1e-12:
+        raise ValueError("Impossibile soddisfare i vincoli con somma 1.0")
 
-    # 4. Bisezione sul Simplesso Vincolato (Trova lambda)
+    # Clamp iniziale dei soli titoli attivi
+    for j in range(k):
+        idx = idx_sorted[j]
+        eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
+        if w[idx] < eff_lower:
+            w[idx] = eff_lower
+        elif w[idx] > upper_arr[idx]:
+            w[idx] = upper_arr[idx]
+
+    # 5. Bisezione sul Simplesso Vincolato
     low = -1.0
     high = 1.0
-    for _ in range(35):
+    for _ in range(40):
         mid = (low + high) * 0.5
         s = 0.0
-        for i in range(n):
-            if w[i] >= pct_min:
-                v = w[i] + mid
-                if v < pct_min:
-                    v = pct_min
-                elif v > upper_arr[i]:
-                    v = upper_arr[i]
-                s += v
+        for j in range(k):
+            idx = idx_sorted[j]
+            eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
+            v = w[idx] + mid
+            if v < eff_lower:
+                v = eff_lower
+            elif v > upper_arr[idx]:
+                v = upper_arr[idx]
+            s += v
 
         if s < 1.0:
             low = mid
         else:
             high = mid
 
-    # 5. Assegnazione definitiva pesi
+    # 6. Assegnazione definitiva pesi
     mid = (low + high) * 0.5
     s_final = 0.0
-    for i in range(n):
-        if w[i] >= pct_min:
-            v = w[i] + mid
-            if v < pct_min:
-                v = pct_min
-            elif v > upper_arr[i]:
-                v = upper_arr[i]
-            w[i] = v
-            s_final += v
-        else:
-            w[i] = 0.0
+    for j in range(k):
+        idx = idx_sorted[j]
+        eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
+        v = w[idx] + mid
+        if v < eff_lower:
+            v = eff_lower
+        elif v > upper_arr[idx]:
+            v = upper_arr[idx]
+        w[idx] = v
+        s_final += v
 
-    # 6. Pulizia micro-residuo numerico float (< 1e-12)
+    # 7. Assorbimento micro-residuo numerico float
     residuo = 1.0 - s_final
     if abs(residuo) > 1e-12:
-        for i in range(n):
-            if w[i] >= pct_min:
-                nuovo = w[i] + residuo
-                if pct_min <= nuovo <= upper_arr[i]:
-                    w[i] = nuovo
-                    break
+        if residuo > 0.0:
+            for j in range(k):
+                idx = idx_sorted[j]
+                spazio = upper_arr[idx] - w[idx]
+                if spazio > 1e-12:
+                    delta = min(residuo, spazio)
+                    w[idx] += delta
+                    residuo -= delta
+                    if residuo <= 1e-12:
+                        break
+        else:
+            for j in range(k):
+                idx = idx_sorted[j]
+                eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
+                spazio = w[idx] - eff_lower
+                if spazio > 1e-12:
+                    delta = min(-residuo, spazio)
+                    w[idx] -= delta
+                    residuo += delta
+                    if abs(residuo) <= 1e-12:
+                        break
 
 
 @njit(fastmath=True)
 def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
     n_cols = pesi.shape[-1]
 
-    # Prepara upper_arr una volta sola (fuori dai loop)
     if upper is None:
         upper_arr = np.full(n_cols, 0.3)
     else:
         upper_arr = upper
 
-    # Dispatch pulito tra 1D e 2D senza duplicazione interna
+    # Controllo esplicito di fattibilità globale
+    n_elig = 0
+    sum_upper_elig = 0.0
+    for i in range(n_cols):
+        if upper_arr[i] >= percentualeMinima:
+            n_elig += 1
+            sum_upper_elig += upper_arr[i]
+
+    if n_elig < minTitoli:
+        raise ValueError("Problema non fattibile: asset eleggibili inferiori a minTitoli")
+    if minTitoli * percentualeMinima > 1.0 + 1e-12:
+        raise ValueError("Problema non fattibile: minTitoli * percentualeMinima > 1.0")
+    if sum_upper_elig < 1.0 - 1e-12:
+        raise ValueError("Problema non fattibile: somma upper bound eleggibili < 1.0")
+
+    # Dispatch vettorializzato 1D o 2D
     if pesi.ndim == 1:
         _proietta_riga(pesi, percentualeMinima, upper_arr, minTitoli)
     else:

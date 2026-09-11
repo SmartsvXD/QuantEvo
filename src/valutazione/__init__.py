@@ -15,8 +15,8 @@ class ValutatoreMultiplo:
             if len(self._indici) != len(inverti):
                 raise Exception("Il numero di indici e di pesi deve essere lo stesso")
             self._inverti = np.ones(len(self._indici)) - 2 * np.array(inverti, bool)
-            
-        self.numIndici = len(self._indici) 
+
+        self.numIndici = len(self._indici)
 
     def fitStandardizza(self, listaPortafogli, stats):
         print(f"\n{Fore.MAGENTA}Fitto la standardizzazione dei valutatori...{Fore.RESET}")
@@ -36,7 +36,7 @@ class ValutatoreMultiplo:
         )
         print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
-    def calcola(self, portafoglio, stats, inverti = False, standardizza=False):
+    def calcola(self, portafoglio, stats, inverti=False, standardizza=False):
         portafoglio = np.atleast_2d(portafoglio)
 
         res = np.empty((portafoglio.shape[0], len(self._indici)), dtype=np.float64)
@@ -46,42 +46,5 @@ class ValutatoreMultiplo:
 
         if inverti:
             res *= self._inverti
-            
+
         return res
-
-
-def _test():
-    import numpy as np
-
-    #from src.valutazione.sharpe import SharpeIndice
-    from src.valutazione.rischio import RischioTotaleCorrettoIndice
-    from src.valutazione.omega import OmegaIndice
-    from src.valutazione.diversificazione import DiversificazioneIndice
-    from src.utils.generaPortafogliValidi import generaPortafogliValidi
-    from src.utils.vincoli import applicaVincoli
-
-    titoli = ["CSUS.MI", "SWDA.MI", "SGLD.MI"]
-    pesi = np.array([0.2, 0.3, 0.5])
-
-    s = StatsTitoli(titoli, verbose=1)
-    s.calcolaStats(verbose=1)
-
-    print(f"\n{Fore.MAGENTA}Genero portafogli validi{Fore.RESET}...")
-    t0 = time.time()
-    portafogli = generaPortafogliValidi(titoli, vincoli=applicaVincoli, n=10000)
-    print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
-
-    diversificazione = DiversificazioneIndice()
-    sharpe = OmegaIndice()
-    rischioCorretto = RischioTotaleCorrettoIndice()
-
-    v = ValutatoreMultiplo((diversificazione, sharpe, rischioCorretto), (1, -1, 1))
-    v.fitStandardizza(portafogli, s)
-
-    ris = v.calcola(pesi, s, standardizza=True)
-
-    print(ris)
-
-    ris = v.calcola(pesi, s, standardizza=False)
-
-    print(ris)

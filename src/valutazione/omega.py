@@ -19,7 +19,6 @@ def _omegaNumba(portafoglio, samples, soglia):
         up = 0.0
         down = 0.0
         for t in range(n_samples):
-            # Calcolo del rendimento al volo senza allocare array
             ret = 0.0
             for a in range(n_asset):
                 ret += portafoglio[i, a] * samples[a, t]
@@ -28,7 +27,7 @@ def _omegaNumba(portafoglio, samples, soglia):
             if diff > 0.0:
                 up += diff
             else:
-                down -= diff  # equivale a +(-diff)
+                down -= diff
 
         if down < 1e-12:
             omega_vals[i] = 1e12 if up > 0.0 else 0.0
@@ -50,30 +49,25 @@ class OmegaIndice(IndiceBootstrap):
     ):
         super().__init__(faiBootstrap, nBootstrap, lambdaPenalitaStabilita, usaBlockBootstrap, lunghezzaBlocco)
 
-        # soglia annuale (es. 0 per zero target, o risk-free rate annuale se desiderato)
         if sogliaAnnua <= -1.0:
-            self._sogliaGiornaliera = sogliaAnnua / GIORNI_IN_UN_ANNO
-        else:
-            self._sogliaGiornaliera = np.log1p(sogliaAnnua) / GIORNI_IN_UN_ANNO
+            raise ValueError("sogliaAnnua deve essere strettamente maggiore di -1.0 (-100%).")
 
-    def preparaListaBootstrap(self, stats, randomState=None, forzaRicalcolo=True, verbose=True):
-        pathStats = "./data/statsBootstrapOmega.data"
-        pathLista = "./data/listaBootstrapOmega.data"
+        # Conversione corretta della soglia composta annua in giornaliera
+        self._sogliaGiornaliera = (1.0 + sogliaAnnua) ** (1.0 / GIORNI_IN_UN_ANNO) - 1.0
 
+    def preparaListaBootstrap(self, stats, randomState=None, verbose=True):
         if verbose:
             t0 = time.time()
             print(f"\n{Fore.MAGENTA}Preparando la lista bootstrap per Omega...{Fore.RESET}")
 
-        super().preparaListaBootstrap(stats, pathStats, pathLista, randomState, forzaRicalcolo, verbose)
+        super().preparaListaBootstrap(stats, randomState, verbose)
 
         if verbose:
             print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
     def _calcolaSemplice(self, portafoglio, stats):
-        # chiamiamo eventuale comportamento comune
         super()._calcolaSemplice(portafoglio, stats)
-
-        return _omegaNumba(portafoglio, stats["rendimenti"], self._sogliaGiornaliera)
+        return _omegaNumba(portafoglio, stats.rendimenti, self._sogliaGiornaliera)
 
     def _calcolaBootstrap(self, portafoglio, stats, randomState=None):
         return super()._calcolaBootstrap(portafoglio, stats, randomState)
@@ -89,22 +83,32 @@ class CAGROmegaIndice(OmegaIndice):
     def calcola(self, portafoglio, stats, standardizza=False):
         omega = super().calcola(portafoglio, stats, standardizza=False)
 
-        # portafoglio: (n_portafogli, n_asset) or (n_asset,) -> at least 2d
-        # rendimentoMedioGiornaliero: vector of daily log-returns (n_asset,)
         portafoglio = np.atleast_2d(portafoglio)
-        rendimentoMedioGiornaliero = stats.rendimentoMedioGiornaliero
 
-        # rendimento medio giornaliero atteso per ogni portafoglio
-        rendimento_port_daily = np.dot(portafoglio, rendimentoMedioGiornaliero)
+        # Rendimenti giornalieri storici del portafoglio (n_portafogli, n_samples)
+        ret_port_daily = np.dot(portafoglio, stats.rendimenti)
 
-        # CAGR: annualizziamo i log-return medi giornalieri
-        cagr = np.exp(rendimento_port_daily * GIORNI_IN_UN_ANNO) - 1.0
-
-        # gestiamo possibili NaN
+        # Vero CAGR geometrico (usando log1p per stabilità ed evitare underflow numerici)
+        ret_port_clipped = np.clip(ret_port_daily, -0.999999, None)
+        cagr = np.expm1(np.mean(np.log1p(ret_port_clipped), axis=1) * GIORNI_IN_UN_ANNO)
         cagr = np.where(np.isnan(cagr), 0.0, cagr)
 
-        p = cagr * (omega - MIN_OMEGA_VALUE)
-        penalized_mask = (cagr < 0.0) | (omega < MIN_OMEGA_VALUE)
-        totale = np.where(penalized_mask, -np.abs(p), p)
+        # Differenziale rispetto alla soglia minima di Omega
+        omega_diff = omega - MIN_OMEGA_VALUE
+
+        # Punteggio base e penalizzazione monotona coerente
+        valido = (cagr > 0.0) & (omega_diff > 0.0)
+        p_valido = cagr * omega_diff
+
+        # Penalità cumulativa proporzionale al deficit: chi peggiora ottiene valori sempre più negativi
+        deficit_cagr = np.maximum(0.0, -cagr)
+        deficit_omega = np.maximum(0.0, -omega_diff)
+        penalita = -(deficit_cagr + deficit_omega)
+
+        totale = np.where(valido, p_valido, penalita)
+
+        # Se il portafoglio in ingresso era 1D, appiattisce il risultato
+        if totale.size == 1:
+            totale = totale.ravel()
 
         return self.standardizza(totale, standardizza)

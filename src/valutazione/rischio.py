@@ -18,21 +18,28 @@ class RischioTotaleIndice(Indice):
         return self.standardizza(valore, standardizza=standardizza)
 
 
-@njit(fastmath=True, parallel=True)
+@njit(parallel=True)
 def calcolaPortReturns(p: np.ndarray, rendimenti: np.ndarray) -> np.ndarray:
     n_p, n_a = p.shape
     n_t = rendimenti.shape[1]
     out = np.zeros((n_p, n_t), dtype=np.float64)
 
     for i in prange(n_p):
-        for a in range(n_a):
-            w = p[i, a]
-            if w == 0.0:
-                continue
-            for t in range(n_t):
+        for t in range(n_t):
+            s_val = 0.0
+            w_val = 0.0
+            for a in range(n_a):
+                w = p[i, a]
                 val = rendimenti[a, t]
-                if not np.isnan(val):
-                    out[i, t] += w * val
+                # Senza fastmath, np.isnan funziona correttamente
+                if w > 0.0 and not np.isnan(val):
+                    s_val += w * val
+                    w_val += w
+
+            # Rinormalizza se mancano dati a tempo t, altrimenti 0 se tutti NaN
+            if w_val > 0.0:
+                out[i, t] = s_val / w_val
+
     return out
 
 
@@ -42,18 +49,26 @@ def maxDrawdown(R: np.ndarray) -> np.ndarray:
     worst = np.zeros(n_p, dtype=np.float64)
 
     for i in prange(n_p):
-        log_w = R[i, 0]
-        max_w = np.exp(log_w)
+        w = 1.0
+        max_w = 1.0
         min_dd = 0.0
 
-        for t in range(1, n_t):
-            log_w += R[i, t]
-            w = np.exp(log_w)
+        for t in range(n_t):
+            # Aggiornamento moltiplicativo con protezione al -100%
+            r = max(R[i, t], -1.0)
+            w *= 1.0 + r
+
             if w > max_w:
                 max_w = w
             elif max_w > 0.0:
                 dd = (w - max_w) / max_w
                 min_dd = min(min_dd, dd)
+
+            # Se il capitale si azzera, il drawdown tocca il limite minimo (-100%)
+            if w <= 0.0:
+                min_dd = -1.0
+                break
+
         worst[i] = min_dd
 
     return worst
@@ -73,6 +88,26 @@ def rischioTailCVar(R: np.ndarray, alpha: float = 0.05) -> np.ndarray:
     return out
 
 
+class RiscioMaxDrawdownIndice(Indice):
+    def calcola(self, portafoglio, stats, standardizza=False):
+        p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
+
+        port_returns = calcolaPortReturns(p, stats.rendimenti)
+        md = maxDrawdown(port_returns)
+
+        return self.standardizza(md, standardizza=standardizza)
+
+
+class RischioTailCVarIndice(Indice):
+    def calcola(self, portafoglio, stats, standardizza=False):
+        p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
+
+        port_returns = calcolaPortReturns(p, stats.rendimenti)
+        cvar = rischioTailCVar(port_returns)
+
+        return self.standardizza(cvar, standardizza=standardizza)
+
+
 class RischioTotaleCorrettoIndice(Indice):
     def __init__(
         self,
@@ -85,31 +120,22 @@ class RischioTotaleCorrettoIndice(Indice):
         self.pesoCVar = pesoCVar
 
         self.rischioTotale = RischioTotaleIndice()
+        self.rischioMD = RiscioMaxDrawdownIndice()
+        self.rischioCVar = RischioTailCVarIndice()
+
+    def fitStandardizza(self, portafoglio, stats):
+        self.rischioMD.fitStandardizza(portafoglio, stats)
+        self.rischioCVar.fitStandardizza(portafoglio, stats)
+        self.rischioTotale.fitStandardizza(portafoglio, stats)
+        super().fitStandardizza(portafoglio, stats)
 
     def calcola(self, portafoglio, stats, standardizza=False):
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
 
-        rischio = self.rischioTotale.calcola(p, stats, standardizza=False)
+        rischio = self.rischioTotale.calcola(p, stats, standardizza=True)
 
-        # Calcolo 2D parallelo senza toccare stats e senza broadcast 3D
-        port_returns = calcolaPortReturns(p, stats.rendimenti)
+        md = self.rischioMD.calcola(p, stats, standardizza=True)
+        cvar = self.rischioCVar.calcola(p, stats, standardizza=True)
 
-        md = maxDrawdown(port_returns)
-        cvar = rischioTailCVar(port_returns)
-
-        md_penalty = np.maximum(0.0, -md)
-        cvar_penalty = np.maximum(0.0, -cvar)
-
-        if p.shape[0] > 1:
-            r_mu, r_sigma = np.mean(rischio), max(np.std(rischio), 1e-12)
-            md_mu, md_sigma = np.mean(md_penalty), max(np.std(md_penalty), 1e-12)
-            cv_mu, cv_sigma = np.mean(cvar_penalty), max(np.std(cvar_penalty), 1e-12)
-
-            rischio_n = (rischio - r_mu) / r_sigma
-            md_n = (md_penalty - md_mu) / md_sigma
-            cvar_n = (cvar_penalty - cv_mu) / cv_sigma
-        else:
-            rischio_n, md_n, cvar_n = rischio, md_penalty, cvar_penalty
-
-        rischioCorretto = rischio_n + self.pesoMD * md_n + self.pesoCVar * cvar_n
+        rischioCorretto = rischio - self.pesoMD * md - self.pesoCVar * cvar
         return self.standardizza(rischioCorretto, standardizza=standardizza)

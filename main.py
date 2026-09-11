@@ -1,13 +1,13 @@
 import json
 
-from src.valutazione.omega import CAGROmegaIndice
+from src.valutazione.omega import OmegaIndice
 from src.valutazione.rischio import RischioTotaleCorrettoIndice
 from src.valutazione.diversificazione import DiversificazioneIndice
 from src.utils.generaPortafogliValidi import generaPortafogliValidi
-from src.utils.vincoli import applicaVincoli
 from src.genetica import run
 from src.valutazione import ValutatoreMultiplo
 from src.managerTitoli import StatsTitoli
+from src.const import PERCENTUALE_MINIMA_TITOLO
 
 if __name__ == "__main__":
     with open("titoli.json", "r") as file:
@@ -19,18 +19,20 @@ if __name__ == "__main__":
     s = StatsTitoli(titoli, forzaDownload=0, verbose=1)
     s.calcolaStats(verbose=1)
 
-    omega = CAGROmegaIndice(faiBootstrap=1)
+    omega = OmegaIndice(faiBootstrap=1)
     rischio = RischioTotaleCorrettoIndice()
     div = DiversificazioneIndice()
 
-    omega.preparaListaBootstrap(s, forzaRicalcolo=0)
+    omega.preparaListaBootstrap(s)
 
     v = ValutatoreMultiplo((div, omega, rischio), (False, True, False))
 
-    portafogli = generaPortafogliValidi(titoli, vincoli=applicaVincoli)
+    portafogli = generaPortafogliValidi(
+        titoli, n=1000, percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3
+    )
     v.fitStandardizza(portafogli, s)
 
-    port, ris = run(s, v, upper=upper, seeds = None)
+    port, ris = run(s, v, upper=upper, seeds=None)
 
     print("\n")
     for i in range(len(titoli)):

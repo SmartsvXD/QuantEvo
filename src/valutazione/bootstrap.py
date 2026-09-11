@@ -4,7 +4,7 @@ import os
 from colorama import Fore
 
 from src.valutazione.indice import Indice
-from src.managerTitoli import StatsTitoli, calcolaStats
+from src.managerTitoli import StatsTitoli, StatsTitoliSemplice
 from src.const import N_PUNTI_BARRA_CARICAMENTO, DEFAULT_N_BOOSTRAP
 
 
@@ -34,70 +34,45 @@ class IndiceBootstrap(Indice):
     def preparaListaBootstrap(
         self,
         stats: StatsTitoli,
-        pathStats,
-        pathLista,
         randomState=None,
-        forzaRicalcolo=True,
         verbose=True,
     ):
         self.listaBootstrap = []
 
-        ricalcola = True
-        if not forzaRicalcolo and os.path.exists(pathStats) and os.path.exists(pathLista):
-            with open(pathStats, "rb") as file:
-                s = pk.load(file)
+        T = stats.rendimenti.shape[1]
 
-            if s == stats:
-                ricalcola = False
+        if T < 2 or self.nBootstrap <= 0:
+            return
 
-        if not ricalcola:
-            if verbose:
-                print(f"{Fore.LIGHTBLACK_EX}Carico il risultato da {pathLista} e {pathStats}...{Fore.RESET}")
+        rng = np.random.default_rng(randomState)
 
-            with open(pathLista, "rb") as file:
-                self.listaBootstrap = pk.load(file)
+        if self.usaBlockBootstrap:
+            blocco = max(2, min(self.lunghezzaBlocco, T))
+            n_blocchi = int(np.ceil(T / blocco))
+            start = rng.integers(0, T, size=(self.nBootstrap, n_blocchi))
+            offset = np.arange(blocco, dtype=np.int64)
+
+            idx = (start[:, :, None] + offset[None, None, :]) % T
+            idx = idx.reshape(self.nBootstrap, n_blocchi * blocco)
+
+            idxs = idx[:, :T]
         else:
-            T = stats.rendimenti.shape[1]
+            idxs = rng.integers(0, T, size=(self.nBootstrap, T))
 
-            if T < 2 or self.nBootstrap <= 0:
-                return
+        for i in range(len(idxs)):
+            sample = stats.rendimenti[:, idxs[i]]
+            s = StatsTitoliSemplice(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
+            s.calcolaStats()
 
-            rng = np.random.default_rng(randomState)
+            self.listaBootstrap.append(s)
 
-            if self.usaBlockBootstrap:
-                blocco = max(2, min(self.lunghezzaBlocco, T))
-                n_blocchi = int(np.ceil(T / blocco))
-                start = rng.integers(0, T, size=(self.nBootstrap, n_blocchi))
-                offset = np.arange(blocco, dtype=np.int64)
+            if verbose and i % 10 == 0:
+                filled = round(i / len(idxs) * N_PUNTI_BARRA_CARICAMENTO)
+                empty = N_PUNTI_BARRA_CARICAMENTO - filled
+                print(f"\r{Fore.LIGHTBLACK_EX}{i}/{len(idxs)} [{'*' * filled}{' ' * empty}]{Fore.RESET}", end="")
 
-                idx = (start[:, :, None] + offset[None, None, :]) % T
-                idx = idx.reshape(self.nBootstrap, n_blocchi * blocco)
-
-                idxs = idx[:, :T]
-            else:
-                idxs = rng.integers(0, T, size=(self.nBootstrap, T))
-
-            for i in range(len(idxs)):
-                sample = stats.rendimenti[:, idxs[i]]
-                s = calcolaStats(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
-                s["rendimenti"] = sample
-                
-                self.listaBootstrap.append(s)
-
-                if verbose and i % 10 == 0:
-                    filled = round(i / len(idxs) * N_PUNTI_BARRA_CARICAMENTO)
-                    empty = N_PUNTI_BARRA_CARICAMENTO - filled
-                    print(f"\r{Fore.LIGHTBLACK_EX}{i}/{len(idxs)} [{'*' * filled}{' ' * empty}]{Fore.RESET}", end="")
-
-            if verbose:
-                print(f"\r{Fore.LIGHTBLACK_EX}{len(idxs)}/{len(idxs)} [{'*' * N_PUNTI_BARRA_CARICAMENTO}]{Fore.RESET}")
-                print(f"{Fore.LIGHTBLACK_EX}Salvo il risultato in {pathLista} e {pathStats}...{Fore.RESET}")
-
-            with open(pathStats, "wb") as file:
-                pk.dump(stats, file)
-
-            with open(pathLista, "wb") as file:
-                pk.dump(self.listaBootstrap, file)
+        if verbose:
+            print(f"\r{Fore.LIGHTBLACK_EX}{len(idxs)}/{len(idxs)} [{'*' * N_PUNTI_BARRA_CARICAMENTO}]{Fore.RESET}")
 
     def _calcolaSemplice(self, portafoglio, stats):
         # Base no-op. Subclassi devono sovrascrivere questa funzione.
@@ -134,8 +109,8 @@ class IndiceBootstrap(Indice):
 
         for i in range(len(idxs)):
             sample = stats.rendimenti[:, idxs[i]]
-            s = calcolaStats(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
-            s["rendimenti"] = sample
+            s = StatsTitoliSemplice(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
+            s.calcolaStats()
 
             res_i = self._calcolaSemplice(p, s)
             res_i = np.atleast_1d(res_i)

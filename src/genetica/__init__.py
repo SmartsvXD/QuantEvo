@@ -87,32 +87,3 @@ def run(
         print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
     return port, ris
-
-
-def _test():
-    import json
-
-    from src.valutazione.sharpe import SharpeIndice
-    from src.valutazione.rischio import RischioTotaleCorrettoIndice
-    from src.valutazione.diversificazione import DiversificazioneIndice
-    from src.utils.generaPortafogliValidi import generaPortafogliValidi
-    from src.utils.vincoli import applicaVincoli
-
-    with open("titoli.json", "r") as file:
-        titoli = [x[0] for x in json.load(file)]
-
-    s = StatsTitoli(titoli, forzaDownload=False, verbose=1)
-    s.calcolaStats(verbose=1)
-
-    sharpe = SharpeIndice(faiBootstrap=True)
-    rischio = RischioTotaleCorrettoIndice()
-    div = DiversificazioneIndice()
-
-    sharpe.preparaListaBootstrap(s, forzaRicalcolo=False)
-
-    v = ValutatoreMultiplo((div, sharpe, rischio), (False, True, False))
-
-    portafogli = generaPortafogliValidi(titoli, vincoli=applicaVincoli)
-    v.fitStandardizza(portafogli, s)
-
-    print(run(s, v)[1][0])

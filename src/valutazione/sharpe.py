@@ -18,25 +18,16 @@ def _sharpeNumba(portafoglio, rendimentoGiornaliero, varianzaPortafoglio, RF):
     # E[AR] = exp(mu_a + 0.5*sigma2_a) - 1
     # Var(AR) = exp(2*mu_a + sigma2_a) * (exp(sigma2_a) - 1)
 
-    N = GIORNI_IN_UN_ANNO
-
     portafoglio = np.atleast_2d(portafoglio)
 
     # portfolio daily log-mean
     mu_p_daily = np.dot(portafoglio, rendimentoGiornaliero)
 
-    # annualize
-    mu_a = mu_p_daily * N
-    sigma2_a = varianzaPortafoglio
+    mu_annuo = mu_p_daily * GIORNI_IN_UN_ANNO
+    varianza_annua = varianzaPortafoglio
+    std_annua = np.sqrt(varianza_annua)
 
-    # expected annual arithmetic return and variance under log-normal
-    exp_mu = np.exp(mu_a + 0.5 * sigma2_a) - 1.0
-    var_ar = np.exp(2.0 * mu_a + sigma2_a) * (np.exp(sigma2_a) - 1.0)
-
-    std_ar = np.sqrt(var_ar)
-    std_ar = np.where(std_ar < 1e-12, 1e-12, std_ar)
-
-    sharpe = (exp_mu - RF) / std_ar
+    sharpe = (mu_annuo - RF) / std_annua
 
     return sharpe
 
@@ -59,15 +50,13 @@ class SharpeIndice(IndiceBootstrap):
         # Da implementare, utilizzeremo FRED
         return RISK_FREE_RATE
 
-    def preparaListaBootstrap(self, stats, randomState=None, forzaRicalcolo=True, verbose=True):
-        pathStats = "./data/statsBootstrapSharpe.data"
-        pathLista = "./data/listaBootstrapSharpe.data"
+    def preparaListaBootstrap(self, stats, randomState=None, verbose=True):
 
         if verbose:
             t0 = time.time()
             print(f"\n{Fore.MAGENTA}Preparando la lista bootstrap per sharpe...{Fore.RESET}")
 
-        super().preparaListaBootstrap(stats, pathStats, pathLista, randomState, forzaRicalcolo, verbose)
+        super().preparaListaBootstrap(stats, randomState, verbose)
 
         if verbose:
             print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
@@ -76,7 +65,7 @@ class SharpeIndice(IndiceBootstrap):
         super()._calcolaSemplice(portafoglio, stats)
 
         varianzaPortafoglio = self.rischio.calcola(portafoglio, stats)
-        return _sharpeNumba(portafoglio, stats["rendimentoMedioGiornaliero"], varianzaPortafoglio, self.RF)
+        return _sharpeNumba(portafoglio, stats.rendimentoMedioGiornaliero, varianzaPortafoglio, self.RF)
 
     def _calcolaBootstrap(self, portafoglio, stats, randomState=None):
         return super()._calcolaBootstrap(portafoglio, stats, randomState)

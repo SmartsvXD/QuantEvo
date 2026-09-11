@@ -3,7 +3,7 @@ from src.const import DEFAULT_PESI_VALUTAZIONE
 
 
 # Funzione per ordinare valutazioni e pesi rispetto alla media delle valutazioni
-def ordina(F, X, upper=None, percentualeMinima=0.05, minTitoli=3, sum_tol=1e-2):
+def ordina(F, X, upper=None, percentualeMinima=0.05, minTitoli=3, sum_tol=1e-8):
     """
     Ordina F (valutazioni) e X (pesi) rispetto alla media delle valutazioni.
     Scarta automaticamente tutte le righe di X che non rispettano i vincoli:

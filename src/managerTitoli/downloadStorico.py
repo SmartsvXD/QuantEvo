@@ -7,6 +7,8 @@ import numpy as np
 import yfinance as yf
 from src.const import GIORNI_MINIMI_VALIDITA
 
+from src.managerTitoli.preprocessing import preprocessaRendimenti
+
 
 def _downloadYFinance(nomi: tuple, anni: int) -> tuple[np.ndarray, np.ndarray, np.ndarray] | tuple[None, None, None]:
     """
@@ -56,8 +58,11 @@ def _downloadYFinance(nomi: tuple, anni: int) -> tuple[np.ndarray, np.ndarray, n
         raise Exception("Impossibile continuare, i titoli non rispettano i limiti minimi di giorni")
 
     # * Trasforma i dati in numpy array
-    # Calcola i log-returns giornalieri: ln(P_t / P_{t-1})
-    rendimenti = np.array(np.log(adjClose / adjClose.shift(1)).dropna(how="all")).T
+    # Usa rendimenti lineari
+    rendimenti = np.array(adjClose.pct_change().dropna().T, dtype=np.float64)  # shape: (n_assets, n_days)
+
+    # * Preprocessa i rendimenti
+    rendimenti = preprocessaRendimenti(rendimenti)
 
     return rendimenti
 

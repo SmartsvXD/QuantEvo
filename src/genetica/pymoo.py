@@ -58,7 +58,7 @@ class ProblemaPortafoglio(Problem):
         statsStoriche: StatsTitoli,
         nValutazioni,
         valutatore: ValutatoreMultiplo,
-        standardizzato=False,
+        standardizzato=True,
     ):
         super().__init__(n_var=nValutazioni, n_obj=valutatore.numIndici, xl=0.0, xu=1.0)
 

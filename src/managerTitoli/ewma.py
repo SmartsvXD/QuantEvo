@@ -1,86 +1,70 @@
-from numba import njit
+from numba import njit, prange
 import numpy as np
 
 
-@njit
+@njit(fastmath=True, parallel=True)
 def mediaEWMA(data: np.ndarray, lambdaEWMA: float) -> np.ndarray:
-    """
-    Accetta solo array 2D e restituisce un array 1D con la media EWMA per
-    ogni riga (sottarray). I NaN vengono ignorati.
+    """Calcola la media ponderata EWMA per ogni riga su rendimenti lineari (vincolo >= -1.0)."""
+    if data.ndim != 2:
+        return np.empty(0, dtype=np.float64)
 
-    Implementazione: calcola i pesi EWMA tramite numpy e poi per ogni riga
-    applica i pesi ignorando i NaN (loop sulle righe per compatibilità con
-    numba `@njit`).
-    """
-
-    nrows = data.shape[0]
-    ncols = data.shape[1]
-
-    # pesi EWMA: (1 - λ) * λ^(ncols-1), ..., (1 - λ) * λ^0
+    nrows, ncols = data.shape
     pesi = (1.0 - lambdaEWMA) * np.power(lambdaEWMA, np.arange(ncols - 1, -1, -1))
-
     out = np.empty(nrows, dtype=np.float64)
-    for i in range(nrows):
+
+    for i in prange(nrows):
         somma = 0.0
         weighted_sum = 0.0
         for j in range(ncols):
             x = data[i, j]
             if not np.isnan(x):
+                x = max(x, -1.0)  # Protezione limite teorico -100%
                 w = pesi[j]
                 somma += w
                 weighted_sum += w * x
-        if somma == 0.0:
-            out[i] = 0.0
-        else:
-            out[i] = weighted_sum / somma
+
+        out[i] = (weighted_sum / somma) if somma > 0.0 else 0.0
 
     return out
 
 
-@njit
+@njit(fastmath=True, parallel=True)
 def stdEWMA(data: np.ndarray, lambdaEWMA: float) -> np.ndarray:
-    """
-    Accetta solo array 2D e restituisce un array 1D con la deviazione
-    standard ponderata EWMA per ogni riga. I NaN vengono ignorati.
-    """
+    """Calcola la deviazione standard EWMA per ogni riga su rendimenti lineari (vincolo >= -1.0)."""
     if data.ndim != 2:
         return np.empty(0, dtype=np.float64)
 
-    nrows = data.shape[0]
-    ncols = data.shape[1]
-
-    # Pesi EWMA: (1 - λ) * λ^(ncols-1), ..., (1 - λ) * λ^0
+    nrows, ncols = data.shape
     pesi = (1.0 - lambdaEWMA) * np.power(lambdaEWMA, np.arange(ncols - 1, -1, -1))
-
     out = np.empty(nrows, dtype=np.float64)
-    for i in range(nrows):
-        # somma dei pesi validi
+
+    for i in prange(nrows):
         somma = 0.0
+        weighted_sum = 0.0
+        # Passaggio 1: somma pesi e media
         for j in range(ncols):
-            if not np.isnan(data[i, j]):
-                somma += pesi[j]
+            x = data[i, j]
+            if not np.isnan(x):
+                x = max(x, -1.0)
+                w = pesi[j]
+                somma += w
+                weighted_sum += w * x
 
         if somma == 0.0:
             out[i] = 0.0
             continue
 
-        # media pesata normalizzata
-        mu = 0.0
-        for j in range(ncols):
-            x = data[i, j]
-            if not np.isnan(x):
-                w = pesi[j] / somma
-                mu += w * x
+        mu = weighted_sum / somma
 
-        # varianza pesata
-        var = 0.0
+        # Passaggio 2: varianza pesata
+        var_sum = 0.0
         for j in range(ncols):
             x = data[i, j]
             if not np.isnan(x):
-                w = pesi[j] / somma
+                x = max(x, -1.0)
                 diff = x - mu
-                var += w * diff * diff
+                var_sum += pesi[j] * diff * diff
 
-        out[i] = np.sqrt(var)
+        out[i] = np.sqrt(var_sum / somma)
 
     return out
