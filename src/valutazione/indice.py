@@ -22,10 +22,9 @@ class Indice:
             return valore
 
     def calcola(self, portafoglio, stats, data, standardizza, inverti):
-        if self.inverti and inverti:
-            data = -data
-        
         if standardizza:
-            return self.standardizza(data)
-        else:
-            return data
+            data = self.standardizza(data)
+
+        if self.inverti and inverti:
+            return -data
+        return data

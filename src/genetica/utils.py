@@ -20,7 +20,7 @@ def ordina(F, X, vincoli: Vincoli, sum_tol=1e-8):
 
     if vincoli.upper is None:
         n = X.shape[1]
-        upper = np.ones(n) * 1.0
+        upper = np.ones(n)
     else:
         upper = vincoli.upper
 

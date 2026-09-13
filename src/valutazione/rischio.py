@@ -10,10 +10,11 @@ from src.valutazione.indice import Indice
 
 class RischioTotaleIndice(Indice):
     def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
-        sigma = stats.sigma
         p = np.atleast_2d(portafoglio)
+        
         # p shape: (nPort, nAssets)
-        valore = np.einsum("pi,ij,pj->p", p, sigma, p)
+        valore = np.einsum("pi,ij,pj->p", p, stats.sigma, p)
+        valore = np.sqrt(valore)
 
         return super().calcola(portafoglio, stats, valore, standardizza, inverti)
 
@@ -25,22 +26,34 @@ def calcolaPortReturns(p: np.ndarray, rendimenti: np.ndarray) -> np.ndarray:
     out = np.zeros((n_p, n_t), dtype=np.float64)
 
     for i in prange(n_p):
-        for t in range(n_t):
-            s_val = 0.0
-            w_val = 0.0
-            for a in range(n_a):
-                w = p[i, a]
-                val = rendimenti[a, t]
-                # Senza fastmath, np.isnan funziona correttamente
-                if w > 0.0 and not np.isnan(val):
-                    s_val += w * val
-                    w_val += w
+        # Valore iniziale allocato a ciascun asset (Buy-and-Hold)
+        v = np.empty(n_a, dtype=np.float64)
+        for a in range(n_a):
+            v[a] = p[i, a]
 
-            # Rinormalizza se mancano dati a tempo t, altrimenti 0 se tutti NaN
-            if w_val > 0.0:
-                out[i, t] = s_val / w_val
+        for t in range(n_t):
+            w_prev = 0.0
+            w_curr = 0.0
+
+            for a in range(n_a):
+                v_a = v[a]
+                w_prev += v_a
+                r = rendimenti[a, t]
+
+                # Se non c'è dato (NaN), il valore resta invariato (r = 0)
+                if not np.isnan(r) and v_a > 0.0:
+                    v_a = max(v_a * (1.0 + r), 0.0)
+
+                v[a] = v_a
+                w_curr += v_a
+
+            if w_prev > 0.0:
+                out[i, t] = (w_curr - w_prev) / w_prev
+            else:
+                out[i, t] = 0.0
 
     return out
+
 
 
 @njit(fastmath=True, parallel=True)

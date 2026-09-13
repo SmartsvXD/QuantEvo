@@ -11,7 +11,7 @@ from src.const import GIORNI_MINIMI_VALIDITA
 from src.managerTitoli.preprocessing import preprocessaRendimenti
 
 
-def _downloadYFinance(nomi: tuple, anni: int) -> tuple[np.ndarray, np.ndarray, np.ndarray] | tuple[None, None, None]:
+def _downloadYFinance(nomi: tuple, anni: int):
     """
     Scarica i dati suando yfinance come fonte
 
@@ -24,8 +24,6 @@ def _downloadYFinance(nomi: tuple, anni: int) -> tuple[np.ndarray, np.ndarray, n
     """
 
     # * Utilizziamo la libreria yfinance per scaricare le informazioni
-    # auto_adjust=False per avere prezzi non aggiustati e calcolare total return manualmente
-    # Questo permette di separare correttamente price appreciation da dividendi
     data = yf.download(
         nomi,
         period=f"{anni}y",
@@ -63,7 +61,8 @@ def _downloadYFinance(nomi: tuple, anni: int) -> tuple[np.ndarray, np.ndarray, n
     rendimenti = np.array(adjClose.pct_change().dropna().T, dtype=np.float64)  # shape: (n_assets, n_days)
 
     # * Preprocessa i rendimenti
-    rendimenti = preprocessaRendimenti(rendimenti)
+    # Al momento non viene fatto nulla, ma la funzione è pronta per eventuali preprocessamenti futuri
+    # rendimenti = preprocessaRendimenti(rendimenti)
 
     return rendimenti
 
@@ -97,7 +96,11 @@ def download(
 
     # * Verifichiamo se dovremmo scaricare o meno
     # Se non esiste un cache o è forzato devi scaricare
-    if not (os.path.exists("./data/titoliDownload.data")) or not (os.path.exists("./data/infoDownload.data")) or forzaDownload:
+    if (
+        not (os.path.exists("./data/titoliDownload.data"))
+        or not (os.path.exists("./data/infoDownload.data"))
+        or forzaDownload
+    ):
         scarica = 1
     else:
         # Se il file esite e il download non è forzato dovremmo verificare che il cache sia idoneo
@@ -105,7 +108,12 @@ def download(
             info = pk.load(file)
 
         # Se il cache è più vecchio di un giorn o se non contiene gli stessi titoli non va bene
-        if ((OGGI - info["data"]).days >= 1) or info["titoli"] != nomi or info["fonte"] != fonte or info["anni"] != anni:
+        if (
+            ((OGGI - info["data"]).days >= 1)
+            or info["titoli"] != nomi
+            or info["fonte"] != fonte
+            or info["anni"] != anni
+        ):
             scarica = 1
         else:
             scarica = 0

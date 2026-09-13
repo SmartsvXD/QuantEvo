@@ -6,11 +6,11 @@ from numba import njit
 def _proietta_riga(w, pct_min, upper_arr, min_titoli):
     n = w.shape[0]
 
-    # Tolleranza per garantire che l'asset attivo sia > pct_min (evita lo scarto in utils.py:38)
+    # Tolleranza per garantire che l'asset attivo sia > pct_min
     eps_min = 1e-7 if min_titoli * (pct_min + 1e-7) <= 1.0 else 0.0
     pct_min_eff = pct_min + eps_min
 
-    # 1. Filtro asset eleggibili e penalizzazione dei non eleggibili
+    # 1. Filtro asset eleggibili
     scores = np.full(n, -1e30)
     n_elig = 0
     for i in range(n):
@@ -23,12 +23,12 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
     if n_elig < min_titoli:
         raise ValueError("Asset eleggibili inferiori a minTitoli")
 
-    # 2. Ordinamento degli asset eleggibili per peso originale decrescente
+    # 2. Ordinamento decrescente
     idx_sorted = np.argsort(-scores)
 
-    # 3. Determinazione della cardinalità attiva k
+    # 3. Determinazione cardinalità attiva k
     k_target = min_titoli
-    max_active = int(1.0 / pct_min)
+    max_active = int(1.0 / pct_min) if pct_min > 0.0 else n_elig
     if max_active > n_elig:
         max_active = n_elig
 
@@ -40,13 +40,9 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
         else:
             break
 
-    k = n_natural
-    if k < k_target:
-        k = k_target
-    if k > max_active:
-        k = max_active
+    k = max(min(max(n_natural, k_target), max_active), k_target)
 
-    # Se la somma dei massimi consentiti è < 1.0, espande il set attivo
+    # Espansione se somma upper < 1.0
     sum_upper = 0.0
     for j in range(k):
         sum_upper += upper_arr[idx_sorted[j]]
@@ -55,7 +51,7 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
         sum_upper += upper_arr[idx_sorted[k]]
         k += 1
 
-    # 4. Maschera attivi e azzeramento esclusi
+    # 4. Maschera attivi
     is_active = np.zeros(n, dtype=np.bool_)
     for j in range(k):
         is_active[idx_sorted[j]] = True
@@ -64,7 +60,7 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
         if not is_active[i]:
             w[i] = 0.0
 
-    # Verifica preliminare di fattibilità sul sottoinsieme selezionato
+    # Verifica preliminare di fattibilità
     sum_min = 0.0
     sum_max = 0.0
     for j in range(k):
@@ -76,7 +72,7 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
     if sum_max < 1.0 - 1e-12 or sum_min > 1.0 + 1e-12:
         raise ValueError("Impossibile soddisfare i vincoli con somma 1.0")
 
-    # Clamp iniziale dei soli titoli attivi
+    # Clamp iniziale
     for j in range(k):
         idx = idx_sorted[j]
         eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
@@ -85,7 +81,7 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
         elif w[idx] > upper_arr[idx]:
             w[idx] = upper_arr[idx]
 
-    # 5. Bisezione sul Simplesso Vincolato
+    # 5. Bisezione sul simplesso
     low = -1.0
     high = 1.0
     for _ in range(40):
@@ -120,7 +116,7 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
         w[idx] = v
         s_final += v
 
-    # 7. Assorbimento micro-residuo numerico float
+    # 7. Assorbimento residuo numerico
     residuo = 1.0 - s_final
     if abs(residuo) > 1e-12:
         if residuo > 0.0:
@@ -147,49 +143,88 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
 
 
 @njit(fastmath=True)
-def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
-    n_cols = pesi.shape[-1]
-
-    # Controllo esplicito di fattibilità globale
-    n_elig = 0
-    sum_upper_elig = 0.0
-    for i in range(n_cols):
-        if upper[i] >= percentualeMinima:
-            n_elig += 1
-            sum_upper_elig += upper[i]
-
-    if n_elig < minTitoli:
-        raise ValueError("Problema non fattibile: asset eleggibili inferiori a minTitoli")
-    if minTitoli * percentualeMinima > 1.0 + 1e-12:
-        raise ValueError("Problema non fattibile: minTitoli * percentualeMinima > 1.0")
-    if sum_upper_elig < 1.0 - 1e-12:
-        raise ValueError("Problema non fattibile: somma upper bound eleggibili < 1.0")
-
-    # Dispatch vettorializzato 1D o 2D
+def _applica_vincoli_jit(pesi, percentualeMinima, upper, minTitoli):
     if pesi.ndim == 1:
         _proietta_riga(pesi, percentualeMinima, upper, minTitoli)
     else:
         for r in range(pesi.shape[0]):
             _proietta_riga(pesi[r], percentualeMinima, upper, minTitoli)
-
     return pesi
+
+
+def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
+    """Valida i vincoli di portafoglio e delega la proiezione al kernel compilato."""
+    # 1. Validazione 'pesi'
+    if not isinstance(pesi, np.ndarray):
+        pesi = np.asarray(pesi, dtype=np.float64)
+    elif not np.issubdtype(pesi.dtype, np.floating):
+        pesi = pesi.astype(np.float64)
+
+    if pesi.ndim not in (1, 2):
+        raise ValueError(f"'pesi' deve avere dimensionalità 1 o 2, ricevuto ndim={pesi.ndim}")
+
+    n_cols = pesi.shape[-1]
+
+    # 2. Validazione parametri scalari
+    if not isinstance(minTitoli, (int, np.integer)) or minTitoli < 1:
+        raise ValueError(f"'minTitoli' deve essere un intero >= 1, ricevuto {minTitoli}")
+    if minTitoli > n_cols:
+        raise ValueError(f"'minTitoli' ({minTitoli}) non può superare il numero di asset ({n_cols})")
+
+    if not isinstance(percentualeMinima, (int, float, np.floating)):
+        raise TypeError("'percentualeMinima' deve essere un valore numerico")
+    if not (0.0 <= percentualeMinima <= 1.0):
+        raise ValueError(f"'percentualeMinima' deve essere in [0, 1], ricevuto {percentualeMinima}")
+
+    # 3. Risoluzione e validazione 'upper'
+    if upper is None:
+        upper = np.ones(n_cols, dtype=np.float64)
+    else:
+        upper = np.asarray(upper, dtype=np.float64)
+        if upper.ndim != 1 or upper.shape[0] != n_cols:
+            raise ValueError(f"'upper' deve essere un array 1D di lunghezza {n_cols}, ricevuto shape={upper.shape}")
+        if np.any(upper < 0.0) or np.any(upper > 1.0):
+            raise ValueError("Tutti gli elementi di 'upper' devono essere compresi nell'intervallo [0, 1]")
+
+    # 4. Validazione consistenza matematica globale
+    if minTitoli * percentualeMinima > 1.0 + 1e-12:
+        raise ValueError(
+            f"Problema non fattibile: minTitoli ({minTitoli}) * percentualeMinima ({percentualeMinima}) = "
+            f"{minTitoli * percentualeMinima:.4f} > 1.0"
+        )
+
+    eleggibili = upper >= percentualeMinima
+    n_elig = np.count_nonzero(eleggibili)
+    if n_elig < minTitoli:
+        raise ValueError(
+            f"Problema non fattibile: asset con upper >= percentualeMinima ({n_elig}) inferiori a minTitoli ({minTitoli})"
+        )
+
+    somma_upper_elig = np.sum(upper[eleggibili])
+    if somma_upper_elig < 1.0 - 1e-12:
+        raise ValueError(
+            f"Problema non fattibile: somma degli upper bound eleggibili ({somma_upper_elig:.4f}) < 1.0"
+        )
+
+    # 5. Assicura memoria contigua per Numba
+    if not pesi.flags.c_contiguous:
+        pesi = np.ascontiguousarray(pesi)
+    if not upper.flags.c_contiguous:
+        upper = np.ascontiguousarray(upper)
+
+    return _applica_vincoli_jit(pesi, float(percentualeMinima), upper, int(minTitoli))
+
 
 class Vincoli:
     def __init__(self, percentualeMinima=0.05, upper=None, minTitoli=3):
         self.percentualeMinima = percentualeMinima
-        # Conversione esplicita in ndarray float64 prima di Numba
         self.upper = np.asarray(upper, dtype=np.float64) if upper is not None else None
         self.minTitoli = minTitoli
 
     def applica(self, portafogli):
-        upper = self.upper
-        if upper is None:
-            n_cols = portafogli.shape[-1]
-            upper = np.ones(n_cols, dtype=np.float64)
-
         return applicaVincoli(
-            portafogli, 
-            percentualeMinima=self.percentualeMinima, 
-            upper=upper, 
-            minTitoli=self.minTitoli
+            portafogli,
+            percentualeMinima=self.percentualeMinima,
+            upper=self.upper,
+            minTitoli=self.minTitoli,
         )

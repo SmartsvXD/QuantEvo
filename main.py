@@ -6,7 +6,7 @@ from src.managerTitoli import StatsTitoli
 from src.utils.vincoli import Vincoli
 from src.valutazione import ValutatoreMultiplo
 from src.valutazione.diversificazione import DiversificazioneIndice
-from src.valutazione.omega import OmegaIndice
+from src.valutazione.omega import CAGROmegaIndice
 from src.valutazione.rischio import RischioTotaleCorrettoIndice
 
 if __name__ == "__main__":
@@ -14,14 +14,15 @@ if __name__ == "__main__":
         data = json.load(file)
 
     titoli = [x[0] for x in data]
-    upper = [x[1] for x in data]
+    # Al momento non utilizziamo upper, ma lo lasciamo per eventuali sviluppi futuri
+    upper = None #[x[1] for x in data]
 
     s = StatsTitoli(titoli, forzaDownload=0, verbose=1)
     s.calcolaStats(verbose=1)
 
     vincoli = Vincoli(percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3)
 
-    omega = OmegaIndice(faiBootstrap=1, inverti=True)
+    omega = CAGROmegaIndice(faiBootstrap=1, inverti=True)
     rischio = RischioTotaleCorrettoIndice()
     div = DiversificazioneIndice()
 

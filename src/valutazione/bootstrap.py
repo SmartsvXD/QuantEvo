@@ -11,24 +11,61 @@ class IndiceBootstrap(Indice):
         self,
         faiBootstrap=False,
         nBootstrap=DEFAULT_N_BOOSTRAP,
-        lambdaPenalitaStabilita=0.4,
-        usaBlockBootstrap=True,
         lunghezzaBlocco=20,
+        metricaRischio="cvar",  # "cvar", "percentile", oppure "downside_penalty"
+        alpha=0.05,
+        lambdaPenalitaStabilita=0.4,
         inverti=False,
     ):
         super().__init__(inverti=inverti)
 
         self.faiBootstrap = faiBootstrap
-        # Numero di bootstrap da eseguire. Se <= 0, non viene eseguito alcun bootstrap.
         self.nBootstrap = nBootstrap
-        # Penalità da applicare alla stabilità del portafoglio. Viene calcolata come deviazione standard dei valori di fitness ottenuti dai bootstrap.
-        self.lambdaPenalitaStabilita = lambdaPenalitaStabilita
-        # Se True, viene eseguito il block bootstrap invece del bootstrap standard. Il block bootstrap preserva la struttura temporale dei rendimenti, mentre il bootstrap standard mescola i rendimenti senza considerare l'ordine temporale.
-        self.usaBlockBootstrap = usaBlockBootstrap
-        # Lunghezza del blocco da utilizzare nel block bootstrap. Deve essere almeno 2 e non può superare il numero di rendimenti disponibili.
         self.lunghezzaBlocco = max(2, int(lunghezzaBlocco))
+        self.metricaRischio = metricaRischio
+        self.alpha = alpha
+        self.lambdaPenalitaStabilita = lambdaPenalitaStabilita
 
         self.listaBootstrap = []
+
+    def _generaIndiciBlocchi(self, T: int, rng: np.random.Generator) -> np.ndarray:
+        """Genera indici con Moving Block Bootstrap senza wrap-around circolare."""
+        blocco = max(2, min(self.lunghezzaBlocco, T))
+        n_blocchi = int(np.ceil(T / blocco))
+
+        # Start limitato a T - blocco + 1 per evitare sovrapposizioni spurie tra fine e inizio
+        max_start = max(1, T - blocco + 1)
+        start = rng.integers(0, max_start, size=(self.nBootstrap, n_blocchi))
+        offset = np.arange(blocco, dtype=np.int64)
+
+        idx = (start[:, :, None] + offset[None, None, :]).reshape(self.nBootstrap, -1)
+        return idx[:, :T]
+
+    def _aggregaValori(self, vals: np.ndarray) -> np.ndarray:
+        """
+        Aggrega le valutazioni bootstrap (forma: n_portafogli, nBootstrap)
+        usando metriche asimmetriche o coerenti con il rischio di coda.
+        """
+        if self.metricaRischio == "cvar":
+            # Expected Shortfall: media condizionata delle osservazioni peggiori sotto l'alfa-quantile
+            q = np.quantile(vals, self.alpha, axis=1, keepdims=True)
+            mask = vals <= q
+            counts = np.maximum(1, np.sum(mask, axis=1))
+            return np.sum(np.where(mask, vals, 0.0), axis=1) / counts
+
+        elif self.metricaRischio == "percentile":
+            # Quantile conservativo (es. 5° percentile della distribuzione bootstrap)
+            return np.quantile(vals, self.alpha, axis=1)
+
+        elif self.metricaRischio == "downside_penalty":
+            # Media penalizzata unicamente dalla semi-deviazione standard negativa
+            media = np.mean(vals, axis=1)
+            diff_negativa = np.minimum(0.0, vals - media[:, None])
+            semi_dev = np.sqrt(np.mean(diff_negativa**2, axis=1))
+            return media - self.lambdaPenalitaStabilita * semi_dev
+
+        # Fallback neutrale alla media semplice
+        return np.mean(vals, axis=1)
 
     def preparaListaBootstrap(
         self,
@@ -37,32 +74,18 @@ class IndiceBootstrap(Indice):
         verbose=True,
     ):
         self.listaBootstrap = []
-
         T = stats.rendimenti.shape[1]
 
         if T < 2 or self.nBootstrap <= 0:
             return
 
         rng = np.random.default_rng(randomState)
-
-        if self.usaBlockBootstrap:
-            blocco = max(2, min(self.lunghezzaBlocco, T))
-            n_blocchi = int(np.ceil(T / blocco))
-            start = rng.integers(0, T, size=(self.nBootstrap, n_blocchi))
-            offset = np.arange(blocco, dtype=np.int64)
-
-            idx = (start[:, :, None] + offset[None, None, :]) % T
-            idx = idx.reshape(self.nBootstrap, n_blocchi * blocco)
-
-            idxs = idx[:, :T]
-        else:
-            idxs = rng.integers(0, T, size=(self.nBootstrap, T))
+        idxs = self._generaIndiciBlocchi(T, rng)
 
         for i in range(len(idxs)):
             sample = stats.rendimenti[:, idxs[i]]
             s = StatsTitoliSemplice(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
             s.calcolaStats()
-
             self.listaBootstrap.append(s)
 
             if verbose and i % 10 == 0:
@@ -74,10 +97,6 @@ class IndiceBootstrap(Indice):
             print(f"\r{Fore.LIGHTBLACK_EX}{len(idxs)}/{len(idxs)} [{'*' * N_PUNTI_BARRA_CARICAMENTO}]{Fore.RESET}")
 
     def _calcolaSemplice(self, portafoglio, stats):
-        # Base no-op. Subclassi devono sovrascrivere questa funzione.
-        # Accetta come `stats` sia un dizionario di statiistiche
-        # sia una matrice di rendimenti; il codice di bootstrap costruisce
-        # oggetti `StatsTitoliSemplice` prima di chiamare l'implementazione della sottoclasse.
         return None
 
     def _calcolaBootstrap(self, portafoglio: np.ndarray, stats: StatsTitoli, randomState=None):
@@ -87,23 +106,10 @@ class IndiceBootstrap(Indice):
             return self._calcolaSemplice(portafoglio, stats)
 
         rng = np.random.default_rng(randomState)
-        if self.usaBlockBootstrap:
-            blocco = max(2, min(self.lunghezzaBlocco, T))
-            n_blocchi = int(np.ceil(T / blocco))
-            start = rng.integers(0, T, size=(self.nBootstrap, n_blocchi))
-            offset = np.arange(blocco, dtype=np.int64)
-
-            idx = (start[:, :, None] + offset[None, None, :]) % T
-            idx = idx.reshape(self.nBootstrap, n_blocchi * blocco)
-
-            idxs = idx[:, :T]
-        else:
-            idxs = rng.integers(0, T, size=(self.nBootstrap, T))
+        idxs = self._generaIndiciBlocchi(T, rng)
 
         p = np.atleast_2d(portafoglio)
         n_port = p.shape[0]
-
-        # raccogli i risultati per ogni bootstrap (shape: n_port, nBootstrap)
         vals = np.empty((n_port, len(idxs)), dtype=np.float64)
 
         for i in range(len(idxs)):
@@ -111,32 +117,32 @@ class IndiceBootstrap(Indice):
             s = StatsTitoliSemplice(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
             s.calcolaStats()
 
-            res_i = self._calcolaSemplice(p, s)
-            res_i = np.atleast_1d(res_i)
-            if res_i.ndim > 1:
-                res_i = res_i.ravel()
+            res_i = np.atleast_1d(self._calcolaSemplice(p, s))
+            vals[:, i] = res_i.ravel()
 
-            vals[:, i] = res_i
-
-        media = np.mean(vals, axis=1)
-        deviazione = np.std(vals, axis=1)
-        result = media - self.lambdaPenalitaStabilita * deviazione
-
-        return result
+        result = self._aggregaValori(vals)
+        return result if portafoglio.ndim > 1 else result[0]
 
     def _calcolaBootstrapFitness(self, portafoglio):
+        if not self.listaBootstrap:
+            return None
+
         if len(self.listaBootstrap) == 1:
             return self._calcolaSemplice(portafoglio, self.listaBootstrap[0])
 
-        fitness_values = np.array([self._calcolaSemplice(portafoglio, s) for s in self.listaBootstrap])
+        p = np.atleast_2d(portafoglio)
+        # Valuta i portafogli su ciascun campione della lista fissa (n_port, nBootstrap)
+        vals = np.column_stack([
+            np.atleast_1d(self._calcolaSemplice(p, s)).ravel()
+            for s in self.listaBootstrap
+        ])
 
-        media = np.mean(fitness_values, axis=0)
-        deviazione = np.std(fitness_values, axis=0)
-        return media - self.lambdaPenalitaStabilita * deviazione
+        result = self._aggregaValori(vals)
+        return result if portafoglio.ndim > 1 else result[0]
 
     def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
         if self.faiBootstrap:
-            if self.listaBootstrap != []:
+            if self.listaBootstrap:
                 ratio = self._calcolaBootstrapFitness(portafoglio)
             else:
                 ratio = self._calcolaBootstrap(portafoglio, stats)
