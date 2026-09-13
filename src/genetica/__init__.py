@@ -1,31 +1,29 @@
-from pymoo.algorithms.moo.nsga2 import NSGA2
-from pymoo.optimize import minimize
-from pymoo.termination.max_gen import MaximumGenerationTermination
-from pymoo.operators.crossover.sbx import SBX
-from pymoo.operators.mutation.pm import PM
-import numpy as np
-from colorama import Fore
 import time
 
-from src.genetica.pymoo import ProblemaPortafoglio, ValidPortfolioSampling, PortfolioRepair, EarlyStoppingCallback
+import numpy as np
+from colorama import Fore
+from pymoo.algorithms.moo.nsga2 import NSGA2
+from pymoo.operators.crossover.sbx import SBX
+from pymoo.operators.mutation.pm import PM
+from pymoo.optimize import minimize
+from pymoo.termination import get_termination
+
+from src.genetica.pymoo import EarlyStoppingCallback, PortfolioRepair, ProblemaPortafoglio, ValidPortfolioSampling
 from src.genetica.utils import ordina
 from src.managerTitoli import StatsTitoli
+from src.utils.vincoli import Vincoli
 from src.valutazione import ValutatoreMultiplo
-from src.const import PERCENTUALE_MINIMA_TITOLO
-from pymoo.termination import get_termination
 
 
 def run(
     statsStoriche: StatsTitoli,
     valutatore: ValutatoreMultiplo,
-    upper=None,
-    percentualeMinima=PERCENTUALE_MINIMA_TITOLO,
+    vincoli: Vincoli,
     popSize=100,
     nGen=500,
     seeds=None,
     faiEarlyStopping=True,
     pazienzaEarlyStopping=40,
-    minTitoli=3,
     hv_ref_point=None,
     verbose=1,
 ):
@@ -46,9 +44,9 @@ def run(
         problem = ProblemaPortafoglio(statsStoriche, nValutazioni, valutatore=valutatore)
 
         sampling = ValidPortfolioSampling(
-            nValutazioni, percentualeMinima=percentualeMinima, upper=upper, minTitoli=minTitoli
+            nValutazioni, vincoli=vincoli
         )
-        repair = PortfolioRepair(percentualeMinima=percentualeMinima, upper=upper, minTitoli=minTitoli)
+        repair = PortfolioRepair(vincoli=vincoli)
 
         algorithm = NSGA2(
             pop_size=popSize,  # Corretto da popSize a pop_size
@@ -81,7 +79,7 @@ def run(
     F_concat = np.vstack(all_F)
     X_concat = np.vstack(all_X)
 
-    ris, port = ordina(F_concat, X_concat, upper=upper, percentualeMinima=percentualeMinima, minTitoli=minTitoli)
+    ris, port = ordina(F_concat, X_concat, vincoli=vincoli)
 
     if verbose >= 1:
         print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")

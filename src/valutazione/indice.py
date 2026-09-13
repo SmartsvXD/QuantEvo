@@ -2,11 +2,12 @@ import numpy as np
 
 
 class Indice:
-    def __init__(self):
+    def __init__(self, inverti=False):
         self.puoStandardizzare = False
+        self.inverti = inverti
 
     def fitStandardizza(self, listaPortafogli, stats):
-        valori = self.calcola(listaPortafogli, stats)
+        valori = self.calcola(listaPortafogli, stats, standardizza=False, inverti=False)
 
         self.mu = np.mean(valori)
         self.sigma = np.std(valori)
@@ -14,11 +15,17 @@ class Indice:
 
         self.puoStandardizzare = True
 
-    def standardizza(self, valore, standardizza=True):
-        if self.puoStandardizzare and standardizza:
+    def standardizza(self, valore):
+        if self.puoStandardizzare:
             return (valore - self.mu) / self.sigma
         else:
             return valore
 
-    def calcola(self, portafoglio, stats):
-        return None
+    def calcola(self, portafoglio, stats, data, standardizza, inverti):
+        if self.inverti and inverti:
+            data = -data
+        
+        if standardizza:
+            return self.standardizza(data)
+        else:
+            return data

@@ -1,11 +1,9 @@
 import numpy as np
-import pickle as pk
-import os
 from colorama import Fore
 
-from src.valutazione.indice import Indice
+from src.const import DEFAULT_N_BOOSTRAP, N_PUNTI_BARRA_CARICAMENTO
 from src.managerTitoli import StatsTitoli, StatsTitoliSemplice
-from src.const import N_PUNTI_BARRA_CARICAMENTO, DEFAULT_N_BOOSTRAP
+from src.valutazione.indice import Indice
 
 
 class IndiceBootstrap(Indice):
@@ -16,8 +14,9 @@ class IndiceBootstrap(Indice):
         lambdaPenalitaStabilita=0.4,
         usaBlockBootstrap=True,
         lunghezzaBlocco=20,
+        inverti=False,
     ):
-        super().__init__()
+        super().__init__(inverti=inverti)
 
         self.faiBootstrap = faiBootstrap
         # Numero di bootstrap da eseguire. Se <= 0, non viene eseguito alcun bootstrap.
@@ -135,7 +134,7 @@ class IndiceBootstrap(Indice):
         deviazione = np.std(fitness_values, axis=0)
         return media - self.lambdaPenalitaStabilita * deviazione
 
-    def calcola(self, portafoglio, stats, standardizza=False):
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
         if self.faiBootstrap:
             if self.listaBootstrap != []:
                 ratio = self._calcolaBootstrapFitness(portafoglio)
@@ -144,4 +143,4 @@ class IndiceBootstrap(Indice):
         else:
             ratio = self._calcolaSemplice(portafoglio, stats)
 
-        return self.standardizza(ratio, standardizza=standardizza)
+        return super().calcola(portafoglio, stats, ratio, standardizza, inverti)

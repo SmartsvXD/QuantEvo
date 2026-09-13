@@ -1,22 +1,20 @@
-from pymoo.core.repair import Repair
-from pymoo.core.problem import Problem
-from pymoo.core.sampling import Sampling
-from pymoo.core.callback import Callback
-from pymoo.indicators.hv import HV
 import numpy as np
+from pymoo.core.callback import Callback
+from pymoo.core.problem import Problem
+from pymoo.core.repair import Repair
+from pymoo.core.sampling import Sampling
+from pymoo.indicators.hv import HV
 
-from src.valutazione import ValutatoreMultiplo
-from src.utils.vincoli import applicaVincoli
 from src.managerTitoli import StatsTitoli
+from src.utils.vincoli import Vincoli
+from src.valutazione import ValutatoreMultiplo
 
 
 class ValidPortfolioSampling(Sampling):
-    def __init__(self, nValutazioni, percentualeMinima=0.05, upper=None, minTitoli=3):
+    def __init__(self, nValutazioni, vincoli: Vincoli):
         super().__init__()
         self.nValutazioni = nValutazioni
-        self.percentualeMinima = percentualeMinima
-        self.upper = np.array(upper) if upper is not None else None
-        self.minTitoli = minTitoli
+        self.vincoli = vincoli
 
     def _do(self, problem, n_samples, **kwargs):
         X = []
@@ -27,17 +25,13 @@ class ValidPortfolioSampling(Sampling):
         return np.array(X)
 
     def _applica_vincoli(self, pesi):
-        return applicaVincoli(
-            pesi, percentualeMinima=self.percentualeMinima, upper=self.upper, minTitoli=self.minTitoli
-        )
+        return self.vincoli.applica(pesi)
 
 
 class PortfolioRepair(Repair):
-    def __init__(self, percentualeMinima=0.05, upper=None, minTitoli=3):
+    def __init__(self, vincoli: Vincoli):
         super().__init__()
-        self.percentualeMinima = percentualeMinima
-        self.upper = np.array(upper) if upper is not None else None
-        self.minTitoli = minTitoli
+        self.vincoli = vincoli
 
     def _do(self, problem, X, **kwargs):
         X_repaired = []
@@ -47,9 +41,7 @@ class PortfolioRepair(Repair):
         return np.array(X_repaired)
 
     def _applica_vincoli(self, pesi):
-        return applicaVincoli(
-            pesi, percentualeMinima=self.percentualeMinima, upper=self.upper, minTitoli=self.minTitoli
-        )
+        return self.vincoli.applica(pesi)
 
 
 class ProblemaPortafoglio(Problem):

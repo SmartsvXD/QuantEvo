@@ -1,9 +1,11 @@
 import numpy as np
+
 from src.const import DEFAULT_PESI_VALUTAZIONE
+from src.utils.vincoli import Vincoli
 
 
 # Funzione per ordinare valutazioni e pesi rispetto alla media delle valutazioni
-def ordina(F, X, upper=None, percentualeMinima=0.05, minTitoli=3, sum_tol=1e-8):
+def ordina(F, X, vincoli: Vincoli, sum_tol=1e-8):
     """
     Ordina F (valutazioni) e X (pesi) rispetto alla media delle valutazioni.
     Scarta automaticamente tutte le righe di X che non rispettano i vincoli:
@@ -16,9 +18,11 @@ def ordina(F, X, upper=None, percentualeMinima=0.05, minTitoli=3, sum_tol=1e-8):
     Ritorna: F_ordinato, X_ordinato
     """
 
-    if upper is None:
+    if vincoli.upper is None:
         n = X.shape[1]
-        upper = np.ones(n) * 0.3
+        upper = np.ones(n) * 1.0
+    else:
+        upper = vincoli.upper
 
     invalid = []
     for i in range(X.shape[0]):
@@ -41,14 +45,14 @@ def ordina(F, X, upper=None, percentualeMinima=0.05, minTitoli=3, sum_tol=1e-8):
             continue
 
         # pesi non nulli sotto la soglia minima
-        mask_min = (row > 0) & (row < percentualeMinima)
+        mask_min = (row > 0) & (row < vincoli.percentualeMinima)
         if np.any(mask_min):
             invalid.append(i)
             continue
 
         # cardinality
-        n_active = int(np.sum(row > percentualeMinima))
-        if n_active < minTitoli:
+        n_active = int(np.sum(row > vincoli.percentualeMinima))
+        if n_active < vincoli.minTitoli:
             invalid.append(i)
             continue
 

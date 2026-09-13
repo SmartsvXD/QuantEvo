@@ -1,12 +1,13 @@
-import time
+import datetime as dt
 import os
 import pickle as pk
-import datetime as dt
-from colorama import Fore
+import time
+
 import numpy as np
 import yfinance as yf
-from src.const import GIORNI_MINIMI_VALIDITA
+from colorama import Fore
 
+from src.const import GIORNI_MINIMI_VALIDITA
 from src.managerTitoli.preprocessing import preprocessaRendimenti
 
 

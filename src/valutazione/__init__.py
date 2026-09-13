@@ -1,26 +1,23 @@
-import numpy as np
-from colorama import Fore
 import time
 
-from src.managerTitoli import StatsTitoli
+import numpy as np
+from colorama import Fore
+
 from src.const import N_PUNTI_BARRA_CARICAMENTO
+from src.utils.generaPortafogliValidi import generaPortafogliValidi
+from src.utils.vincoli import Vincoli
 
 
 class ValutatoreMultiplo:
-    def __init__(self, indici: tuple, inverti: tuple | None = None):
+    def __init__(self, indici: tuple):
         self._indici = indici
-        if inverti is None:
-            self._inverti = np.ones(len(self._indici))
-        else:
-            if len(self._indici) != len(inverti):
-                raise Exception("Il numero di indici e di pesi deve essere lo stesso")
-            self._inverti = np.ones(len(self._indici)) - 2 * np.array(inverti, bool)
-
         self.numIndici = len(self._indici)
 
-    def fitStandardizza(self, listaPortafogli, stats):
+    def fitStandardizza(self, stats, vincoli: Vincoli):
         print(f"\n{Fore.MAGENTA}Fitto la standardizzazione dei valutatori...{Fore.RESET}")
         t0 = time.time()
+
+        listaPortafogli = generaPortafogliValidi(len(stats.nomi), vincoli, n=10000)
 
         for n, i in enumerate(self._indici):
             # Barra di caricamento
@@ -36,15 +33,12 @@ class ValutatoreMultiplo:
         )
         print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
-    def calcola(self, portafoglio, stats, inverti=False, standardizza=False):
+    def calcola(self, portafoglio, stats, standardizza=False, inverti=False):
         portafoglio = np.atleast_2d(portafoglio)
 
         res = np.empty((portafoglio.shape[0], len(self._indici)), dtype=np.float64)
         for n, i in enumerate(self._indici):
-            vals = i.calcola(portafoglio, stats, standardizza=standardizza)
+            vals = i.calcola(portafoglio, stats, standardizza=standardizza, inverti=inverti)
             res[:, n] = vals
-
-        if inverti:
-            res *= self._inverti
 
         return res

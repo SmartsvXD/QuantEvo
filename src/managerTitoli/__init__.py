@@ -1,10 +1,10 @@
-import numpy as np
 import time
+
+import numpy as np
 from colorama import Fore
 
-from src.const import GIORNI_IN_UN_ANNO, DEFAULT_LAMBDA_EWMA, DEFAULT_MEAN_SHRINKAGE
+from src.const import DEFAULT_LAMBDA_EWMA, DEFAULT_MEAN_SHRINKAGE, GIORNI_IN_UN_ANNO
 from src.managerTitoli.downloadStorico import download
-from src.managerTitoli.preprocessing import preprocessaRendimenti
 from src.managerTitoli.ewma import mediaEWMA, stdEWMA
 from src.managerTitoli.matriceCorrelazione import _calcolaMatriceCorrelazione
 

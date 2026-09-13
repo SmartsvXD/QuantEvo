@@ -1,21 +1,21 @@
 import numpy as np
 from numba import njit, prange
 
-from src.valutazione.indice import Indice
 from src.const import (
-    DEFAULT_PESO_MD,
     DEFAULT_PESO_CVAR,
+    DEFAULT_PESO_MD,
 )
+from src.valutazione.indice import Indice
 
 
 class RischioTotaleIndice(Indice):
-    def calcola(self, portafoglio, stats, standardizza=False):
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
         sigma = stats.sigma
         p = np.atleast_2d(portafoglio)
         # p shape: (nPort, nAssets)
         valore = np.einsum("pi,ij,pj->p", p, sigma, p)
 
-        return self.standardizza(valore, standardizza=standardizza)
+        return super().calcola(portafoglio, stats, valore, standardizza, inverti)
 
 
 @njit(parallel=True)
@@ -89,23 +89,23 @@ def rischioTailCVar(R: np.ndarray, alpha: float = 0.05) -> np.ndarray:
 
 
 class RiscioMaxDrawdownIndice(Indice):
-    def calcola(self, portafoglio, stats, standardizza=False):
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
 
         port_returns = calcolaPortReturns(p, stats.rendimenti)
         md = maxDrawdown(port_returns)
 
-        return self.standardizza(md, standardizza=standardizza)
+        return super().calcola(portafoglio, stats, md, standardizza, inverti)
 
 
 class RischioTailCVarIndice(Indice):
-    def calcola(self, portafoglio, stats, standardizza=False):
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
 
         port_returns = calcolaPortReturns(p, stats.rendimenti)
         cvar = rischioTailCVar(port_returns)
 
-        return self.standardizza(cvar, standardizza=standardizza)
+        return super().calcola(portafoglio, stats, cvar, standardizza, inverti)
 
 
 class RischioTotaleCorrettoIndice(Indice):
@@ -113,8 +113,9 @@ class RischioTotaleCorrettoIndice(Indice):
         self,
         pesoMD=DEFAULT_PESO_MD,
         pesoCVar=DEFAULT_PESO_CVAR,
+        inverti=False,
     ):
-        super().__init__()
+        super().__init__(inverti=inverti)
 
         self.pesoMD = pesoMD
         self.pesoCVar = pesoCVar
@@ -129,7 +130,7 @@ class RischioTotaleCorrettoIndice(Indice):
         self.rischioTotale.fitStandardizza(portafoglio, stats)
         super().fitStandardizza(portafoglio, stats)
 
-    def calcola(self, portafoglio, stats, standardizza=False):
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
 
         rischio = self.rischioTotale.calcola(p, stats, standardizza=True)
@@ -138,4 +139,4 @@ class RischioTotaleCorrettoIndice(Indice):
         cvar = self.rischioCVar.calcola(p, stats, standardizza=True)
 
         rischioCorretto = rischio - self.pesoMD * md - self.pesoCVar * cvar
-        return self.standardizza(rischioCorretto, standardizza=standardizza)
+        return super().calcola(portafoglio, stats, rischioCorretto, standardizza, inverti)

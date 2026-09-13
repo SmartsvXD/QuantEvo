@@ -150,18 +150,13 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
 def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
     n_cols = pesi.shape[-1]
 
-    if upper is None:
-        upper_arr = np.full(n_cols, 0.3)
-    else:
-        upper_arr = upper
-
     # Controllo esplicito di fattibilità globale
     n_elig = 0
     sum_upper_elig = 0.0
     for i in range(n_cols):
-        if upper_arr[i] >= percentualeMinima:
+        if upper[i] >= percentualeMinima:
             n_elig += 1
-            sum_upper_elig += upper_arr[i]
+            sum_upper_elig += upper[i]
 
     if n_elig < minTitoli:
         raise ValueError("Problema non fattibile: asset eleggibili inferiori a minTitoli")
@@ -172,9 +167,29 @@ def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
 
     # Dispatch vettorializzato 1D o 2D
     if pesi.ndim == 1:
-        _proietta_riga(pesi, percentualeMinima, upper_arr, minTitoli)
+        _proietta_riga(pesi, percentualeMinima, upper, minTitoli)
     else:
         for r in range(pesi.shape[0]):
-            _proietta_riga(pesi[r], percentualeMinima, upper_arr, minTitoli)
+            _proietta_riga(pesi[r], percentualeMinima, upper, minTitoli)
 
     return pesi
+
+class Vincoli:
+    def __init__(self, percentualeMinima=0.05, upper=None, minTitoli=3):
+        self.percentualeMinima = percentualeMinima
+        # Conversione esplicita in ndarray float64 prima di Numba
+        self.upper = np.asarray(upper, dtype=np.float64) if upper is not None else None
+        self.minTitoli = minTitoli
+
+    def applica(self, portafogli):
+        upper = self.upper
+        if upper is None:
+            n_cols = portafogli.shape[-1]
+            upper = np.ones(n_cols, dtype=np.float64)
+
+        return applicaVincoli(
+            portafogli, 
+            percentualeMinima=self.percentualeMinima, 
+            upper=upper, 
+            minTitoli=self.minTitoli
+        )

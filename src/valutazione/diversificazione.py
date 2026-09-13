@@ -1,8 +1,8 @@
 import numpy as np
 from numba import njit
 
+from src.const import DEFAULT_EPSILON_CARDINALITA, DEFAULT_MAX_TITOLI_CARD, DEFAULT_MIN_TITOLI_CARD, DEFAULT_PESO_CARD
 from src.valutazione.indice import Indice
-from src.const import DEFAULT_PESO_CARD, DEFAULT_MIN_TITOLI_CARD, DEFAULT_EPSILON_CARDINALITA, DEFAULT_MAX_TITOLI_CARD
 
 
 @njit(fastmath=True)
@@ -67,6 +67,7 @@ class DiversificazioneIndice(Indice):
         cardMinTitoli=DEFAULT_MIN_TITOLI_CARD,
         cardMaxTitoli=DEFAULT_MAX_TITOLI_CARD,
         cardEpsilon=DEFAULT_EPSILON_CARDINALITA,
+        inverti=False,
     ):
 
         self.pesoCard = pesoCard
@@ -74,9 +75,9 @@ class DiversificazioneIndice(Indice):
         self.cardMaxTitoli = cardMaxTitoli
         self.cardEpsilon = cardEpsilon
 
-        super().__init__()
+        super().__init__(inverti=inverti)
 
-    def calcola(self, portafoglio, stats, standardizza=False):
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
         portafoglio = np.atleast_2d(portafoglio)
 
         quadCorr = np.einsum("pi,ij,pj->p", portafoglio, stats.corr, portafoglio)
@@ -87,4 +88,4 @@ class DiversificazioneIndice(Indice):
             portafoglio, minTitoli=self.cardMinTitoli, maxTitoli=self.cardMaxTitoli, epsilon=self.cardEpsilon
         )
 
-        return self.standardizza(val, standardizza=standardizza)
+        return super().calcola(portafoglio, stats, val, standardizza, inverti)

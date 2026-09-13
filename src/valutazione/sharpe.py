@@ -1,26 +1,18 @@
-import numpy as np
-from numba import njit
 import time
-from colorama import Fore
 
+import numpy as np
+from colorama import Fore
+from numba import njit
+
+from src.const import DEFAULT_N_BOOSTRAP, GIORNI_IN_UN_ANNO, RISK_FREE_RATE
 from src.valutazione.bootstrap import IndiceBootstrap
 from src.valutazione.rischio import RischioTotaleIndice
-from src.const import GIORNI_IN_UN_ANNO, RISK_FREE_RATE, DEFAULT_N_BOOSTRAP
 
 
 @njit(fastmath=True)
 def _sharpeNumba(portafoglio, rendimentoGiornaliero, varianzaPortafoglio, RF):
-    # Here `rendimentoGiornaliero` is assumed to be daily log-returns (mu_d)
-    # and `varianzaPortafoglio` is annualized log-variance (sigma2_a),
-    # as produced by RischioTotaleIndice using annualized covariance.
-    # We convert to annual arithmetic moments under log-normal assumption:
-    # mu_a = mu_d * N, sigma2_a already annualized
-    # E[AR] = exp(mu_a + 0.5*sigma2_a) - 1
-    # Var(AR) = exp(2*mu_a + sigma2_a) * (exp(sigma2_a) - 1)
-
     portafoglio = np.atleast_2d(portafoglio)
 
-    # portfolio daily log-mean
     mu_p_daily = np.dot(portafoglio, rendimentoGiornaliero)
 
     mu_annuo = mu_p_daily * GIORNI_IN_UN_ANNO
@@ -40,8 +32,9 @@ class SharpeIndice(IndiceBootstrap):
         lambdaPenalitaStabilita=0.5,
         usaBlockBootstrap=True,
         lunghezzaBlocco=20,
+        inverti=True,
     ):
-        super().__init__(faiBootstrap, nBootstrap, lambdaPenalitaStabilita, usaBlockBootstrap, lunghezzaBlocco)
+        super().__init__(faiBootstrap, nBootstrap, lambdaPenalitaStabilita, usaBlockBootstrap, lunghezzaBlocco, inverti)
 
         self.RF = self.calcolaRendimentoPrivoDiRischio()
         self.rischio = RischioTotaleIndice()
@@ -73,5 +66,5 @@ class SharpeIndice(IndiceBootstrap):
     def _calcolaBootstrapFitness(self, portafoglio):
         return super()._calcolaBootstrapFitness(portafoglio)
 
-    def calcola(self, portafoglio, stats, standardizza=False):
-        return super().calcola(portafoglio, stats, standardizza)
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
+        return super().calcola(portafoglio, stats, standardizza, inverti)

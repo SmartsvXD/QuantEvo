@@ -1,10 +1,12 @@
-import numpy as np
-from numba import njit
 import time
-from colorama import Fore
 
+import numpy as np
+from colorama import Fore
+from numba import njit
+
+from src.const import DEFAULT_N_BOOSTRAP, GIORNI_IN_UN_ANNO, MIN_OMEGA_VALUE
 from src.valutazione.bootstrap import IndiceBootstrap
-from src.const import GIORNI_IN_UN_ANNO, DEFAULT_N_BOOSTRAP, MIN_OMEGA_VALUE
+from src.valutazione.indice import Indice
 
 
 @njit(fastmath=True)
@@ -46,8 +48,9 @@ class OmegaIndice(IndiceBootstrap):
         lambdaPenalitaStabilita=0.5,
         usaBlockBootstrap=True,
         lunghezzaBlocco=20,
+        inverti=True,
     ):
-        super().__init__(faiBootstrap, nBootstrap, lambdaPenalitaStabilita, usaBlockBootstrap, lunghezzaBlocco)
+        super().__init__(faiBootstrap, nBootstrap, lambdaPenalitaStabilita, usaBlockBootstrap, lunghezzaBlocco, inverti)
 
         if sogliaAnnua <= -1.0:
             raise ValueError("sogliaAnnua deve essere strettamente maggiore di -1.0 (-100%).")
@@ -75,13 +78,35 @@ class OmegaIndice(IndiceBootstrap):
     def _calcolaBootstrapFitness(self, portafoglio):
         return super()._calcolaBootstrapFitness(portafoglio)
 
-    def calcola(self, portafoglio, stats, standardizza=False):
-        return super().calcola(portafoglio, stats, standardizza)
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
+        return super().calcola(portafoglio, stats, standardizza, inverti)
 
 
-class CAGROmegaIndice(OmegaIndice):
-    def calcola(self, portafoglio, stats, standardizza=False):
-        omega = super().calcola(portafoglio, stats, standardizza=False)
+class CAGROmegaIndice(Indice):
+    def __init__(
+        self,
+        sogliaAnnua=0.0,
+        faiBootstrap=False,
+        nBootstrap=DEFAULT_N_BOOSTRAP,
+        lambdaPenalitaStabilita=0.5,
+        usaBlockBootstrap=True,
+        lunghezzaBlocco=20,
+        inverti=True,
+    ):
+        super().__init__(inverti=inverti)
+
+        self.omegaIndice = OmegaIndice(
+            sogliaAnnua,
+            faiBootstrap,
+            nBootstrap,
+            lambdaPenalitaStabilita,
+            usaBlockBootstrap,
+            lunghezzaBlocco,
+            inverti=False,
+        )
+
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
+        omega = self.omegaIndice.calcola(portafoglio, stats, standardizza=False, inverti=False)
 
         portafoglio = np.atleast_2d(portafoglio)
 
@@ -111,4 +136,4 @@ class CAGROmegaIndice(OmegaIndice):
         if totale.size == 1:
             totale = totale.ravel()
 
-        return self.standardizza(totale, standardizza)
+        return super().calcola(portafoglio, stats, totale, standardizza, inverti)
