@@ -5,59 +5,50 @@ from src.utils.vincoli import Vincoli
 
 
 # Funzione per ordinare valutazioni e pesi rispetto alla media delle valutazioni
-def ordina(F, X, vincoli: Vincoli, sum_tol=1e-8):
-    """
-    Ordina F (valutazioni) e X (pesi) rispetto alla media delle valutazioni.
-    Scarta automaticamente tutte le righe di X che non rispettano i vincoli:
-      - pesi >= 0
-      - pesi <= upper
-      - pesi = 0 oppure >= percentualeMinima
-      - almeno `min_assets` asset con peso > percentualeMinima
-      - somma dei pesi = 1 (entro `sum_tol`)
-
-    Ritorna: F_ordinato, X_ordinato
-    """
-
+def ordina(F, X, vincoli: Vincoli, sum_tol=1e-8, zero_tol=1e-12):
     if vincoli.upper is None:
         n = X.shape[1]
         upper = np.ones(n)
     else:
         upper = vincoli.upper
 
+    pct_min = vincoli.percentualeMinima
+    min_titoli = vincoli.minTitoli
+
     invalid = []
     for i in range(X.shape[0]):
         row = X[i]
 
-        # negativi significativi
-        if np.any(row < -1e-12):
+        # 1. Valori negativi significativi
+        if np.any(row < -zero_tol):
             invalid.append(i)
             continue
 
-        # sopra upper
-        if np.any(row - upper > 1e-12):
+        # 2. Sopra l'upper bound
+        if np.any(row - upper > zero_tol):
             invalid.append(i)
             continue
 
-        # somma deve essere ~1
-        s = row.sum()
-        if abs(s - 1.0) > sum_tol:
+        # 3. Somma pesi = 1
+        if abs(row.sum() - 1.0) > sum_tol:
             invalid.append(i)
             continue
 
-        # pesi non nulli sotto la soglia minima
-        mask_min = (row > 0) & (row < vincoli.percentualeMinima)
-        if np.any(mask_min):
+        # 4. Pesi semi-continui: ammessi solo ~0 oppure >= (pct_min - tol)
+        # Se un peso è > zero_tol ma < pct_min - zero_tol, è invalido
+        mask_invalido = (row > zero_tol) & (row < pct_min - zero_tol)
+        if np.any(mask_invalido):
             invalid.append(i)
             continue
 
-        # cardinality
-        n_active = int(np.sum(row > vincoli.percentualeMinima))
-        if n_active < vincoli.minTitoli:
+        # 5. Cardinalità minima: asset con peso >= pct_min (con tolleranza)
+        n_active = int(np.sum(row >= pct_min - zero_tol))
+        if n_active < min_titoli:
             invalid.append(i)
             continue
 
+    print(f"Scartate {len(invalid)} soluzioni non valide su {X.shape[0]} totali.")
     if len(invalid) > 0:
-        print(f"Scartate {len(invalid)} soluzioni non valide su {X.shape[0]} totali.")
         invalid = np.unique(np.array(invalid, dtype=np.int64))
         X = np.delete(X, invalid, axis=0)
         F = np.delete(F, invalid, axis=0)

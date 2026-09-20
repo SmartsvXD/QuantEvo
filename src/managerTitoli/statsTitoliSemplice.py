@@ -25,7 +25,7 @@ class StatsTitoliSemplice:
         stats["rendimenti"] = rendimenti
 
         # Diversificazione, Rischio
-        stats["corr"], stats["sigma"] = self.calcolaMatriceCorrelazioneECovarianza(rendimenti)
+        stats["corr"] = self.calcolaMatriceCorrelazioneECovarianza(rendimenti)
 
         return stats
 
@@ -64,7 +64,7 @@ class StatsTitoliSemplice:
         corr_matrix = np.clip(corr_matrix, -1.0, 1.0)
         np.fill_diagonal(corr_matrix, 1.0)
 
-        return corr_matrix, cov
+        return corr_matrix
 
     @staticmethod
     def _generaIndiciBlocchi(T: int, nBootstrap: int, lunghezzaBlocco: int, rng: np.random.Generator):

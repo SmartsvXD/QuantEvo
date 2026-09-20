@@ -6,15 +6,6 @@ from src.valutazione.indice import Indice
 from src.valutazione.indice import Indice
 
 
-class RischioTotaleIndice(Indice):
-    def __init__(self, inverti=False):
-        super().__init__(inverti=inverti)
-
-    def _calcola(self, portafoglio: np.ndarray, tensori: dict):
-        p = np.atleast_2d(portafoglio)
-        return np.sqrt(np.einsum("pi,bij,pj->pb", p, tensori["sigma"], p))
-
-
 @njit(parallel=True, fastmath=True)
 def calcolaPortReturns(p: np.ndarray, rendimenti_boot: np.ndarray) -> np.ndarray:
     n_p, n_a = p.shape
@@ -36,6 +27,27 @@ def calcolaPortReturns(p: np.ndarray, rendimenti_boot: np.ndarray) -> np.ndarray
                     v[a] = v_a
                     w_curr += v_a
                 out[i, b, t] = (w_curr - w_prev) / w_prev if w_prev > 0.0 else 0.0
+
+    return out
+
+
+@njit(fastmath=True, parallel=True)
+def volatilitaPortafoglio(R: np.ndarray) -> np.ndarray:
+    n_p, n_t = R.shape
+    out = np.empty(n_p, dtype=np.float64)
+
+    for i in prange(n_p):
+        mean = 0.0
+        for t in range(n_t):
+            mean += R[i, t]
+        mean /= n_t
+
+        var = 0.0
+        for t in range(n_t):
+            diff = R[i, t] - mean
+            var += diff * diff
+
+        out[i] = np.sqrt(var / (n_t - 1)) if n_t > 1 else 0.0
 
     return out
 
@@ -84,14 +96,20 @@ def rischioTailCVar(R: np.ndarray, alpha: float = 0.05) -> np.ndarray:
     return out
 
 
-class RischioMaxDrawdownIndice(Indice):
-    def _calcolaSemplice(self, portafoglio, stats, portReturns=None):
-        if portReturns is None:
-            portReturns = calcolaPortReturns(
-                np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64), stats.stats["rendimenti"]
-            )
-        return maxDrawdown(portReturns)
+class RischioTotaleIndice(Indice):
+    def __init__(self, inverti=False):
+        super().__init__(inverti=inverti)
 
+    def _calcola(self, portafoglio: np.ndarray, tensori: dict, portReturns=None):
+        p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
+        if portReturns is None:
+            portReturns = calcolaPortReturns(p, tensori["rendimenti"])
+        nP, nB, nT = portReturns.shape
+        flat_vol = volatilitaPortafoglio(portReturns.reshape(nP * nB, nT))
+        return flat_vol.reshape(nP, nB)
+
+
+class RischioMaxDrawdownIndice(Indice):
     def _calcola(self, portafoglio: np.ndarray, tensori: dict, portReturns=None):
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
         if portReturns is None:
@@ -150,7 +168,7 @@ class RischioTotaleCorrettoIndice(Indice):
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
         portReturns = calcolaPortReturns(p, tensori["rendimenti"])
 
-        rischio = self.rischioTotale._calcola(p, tensori)
+        rischio = self.rischioTotale._calcola(p, tensori, portReturns=portReturns)
         md = self.rischioMD._calcola(p, tensori, portReturns=portReturns)
         cvar = self.rischioCVar._calcola(p, tensori, portReturns=portReturns)
 
