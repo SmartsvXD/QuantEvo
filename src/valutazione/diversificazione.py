@@ -1,8 +1,14 @@
 import numpy as np
 from numba import njit
 
-from src.const import DEFAULT_EPSILON_CARDINALITA, DEFAULT_MAX_TITOLI_CARD, DEFAULT_MIN_TITOLI_CARD, DEFAULT_PESO_CARD
-from src.valutazione.indice import Indice
+from src.const import (
+    DEFAULT_EPSILON_CARDINALITA,
+    DEFAULT_MAX_TITOLI_CARD,
+    DEFAULT_MIN_TITOLI_CARD,
+    DEFAULT_N_BOOSTRAP,
+    DEFAULT_PESO_CARD,
+)
+from src.valutazione.bootstrap import IndiceBootstrap
 
 
 @njit(fastmath=True)
@@ -60,9 +66,15 @@ def penaltyCardinalita(
     return res
 
 
-class DiversificazioneIndice(Indice):
+class DiversificazioneIndice(IndiceBootstrap):
     def __init__(
         self,
+        faiBootstrap=False,
+        nBootstrap=DEFAULT_N_BOOSTRAP,
+        lunghezzaBlocco=20,
+        metricaRischio="cvar",
+        alpha=0.05,
+        lambdaPenalitaStabilita=0.4,
         pesoCard=DEFAULT_PESO_CARD,
         cardMinTitoli=DEFAULT_MIN_TITOLI_CARD,
         cardMaxTitoli=DEFAULT_MAX_TITOLI_CARD,
@@ -75,9 +87,17 @@ class DiversificazioneIndice(Indice):
         self.cardMaxTitoli = cardMaxTitoli
         self.cardEpsilon = cardEpsilon
 
-        super().__init__(inverti=inverti)
+        super().__init__(
+            inverti=inverti,
+            faiBootstrap=faiBootstrap,
+            nBootstrap=nBootstrap,
+            lunghezzaBlocco=lunghezzaBlocco,
+            metricaRischio=metricaRischio,
+            alpha=alpha,
+            lambdaPenalitaStabilita=lambdaPenalitaStabilita,
+        )
 
-    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
+    def _calcolaSemplice(self, portafoglio, stats):
         portafoglio = np.atleast_2d(portafoglio)
 
         quadCorr = np.einsum("pi,ij,pj->p", portafoglio, stats.corr, portafoglio)
@@ -87,5 +107,5 @@ class DiversificazioneIndice(Indice):
         val += self.pesoCard * penaltyCardinalita(
             portafoglio, minTitoli=self.cardMinTitoli, maxTitoli=self.cardMaxTitoli, epsilon=self.cardEpsilon
         )
-
-        return super().calcola(portafoglio, stats, val, standardizza, inverti)
+        
+        return val

@@ -1,8 +1,10 @@
+import time
+
 import numpy as np
 from colorama import Fore
 
 from src.const import DEFAULT_N_BOOSTRAP, N_PUNTI_BARRA_CARICAMENTO
-from src.managerTitoli import StatsTitoli, StatsTitoliSemplice
+from src.managerTitoli import StatsTitoliSemplice
 from src.valutazione.indice import Indice
 
 
@@ -69,10 +71,14 @@ class IndiceBootstrap(Indice):
 
     def preparaListaBootstrap(
         self,
-        stats: StatsTitoli,
+        stats,
         randomState=None,
         verbose=True,
     ):
+        if verbose:
+            t0 = time.time()
+            print(f"\n{Fore.MAGENTA}Preparando la lista bootstrap per {self.__class__.__name__}...{Fore.RESET}")
+        
         self.listaBootstrap = []
         T = stats.rendimenti.shape[1]
 
@@ -95,15 +101,16 @@ class IndiceBootstrap(Indice):
 
         if verbose:
             print(f"\r{Fore.LIGHTBLACK_EX}{len(idxs)}/{len(idxs)} [{'*' * N_PUNTI_BARRA_CARICAMENTO}]{Fore.RESET}")
+            print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
     def _calcolaSemplice(self, portafoglio, stats):
-        return None
+        raise NotImplementedError("Metodo _calcolaSemplice() non implementato nella classe derivata.")
 
-    def _calcolaBootstrap(self, portafoglio: np.ndarray, stats: StatsTitoli, randomState=None):
+    def _calcolaBootstrap(self, portafoglio: np.ndarray, stats, randomState=None, *args, **kwargs):
         T = stats.rendimenti.shape[1]
 
         if T < 2 or self.nBootstrap <= 0:
-            return self._calcolaSemplice(portafoglio, stats)
+            return self._calcolaSemplice(portafoglio, stats, *args, **kwargs)
 
         rng = np.random.default_rng(randomState)
         idxs = self._generaIndiciBlocchi(T, rng)
@@ -117,36 +124,40 @@ class IndiceBootstrap(Indice):
             s = StatsTitoliSemplice(sample, lambdaEWMA=stats._lambdaEWMA, shrink=stats._shrink)
             s.calcolaStats()
 
-            res_i = np.atleast_1d(self._calcolaSemplice(p, s))
+            res_i = np.atleast_1d(self._calcolaSemplice(p, stats, *args, **kwargs))
             vals[:, i] = res_i.ravel()
 
         result = self._aggregaValori(vals)
         return result if portafoglio.ndim > 1 else result[0]
 
-    def _calcolaBootstrapFitness(self, portafoglio):
+    def _calcolaBootstrapFitness(self, portafoglio, stats, *args, **kwargs):
         if not self.listaBootstrap:
             return None
 
         if len(self.listaBootstrap) == 1:
-            return self._calcolaSemplice(portafoglio, self.listaBootstrap[0])
+            return self._calcolaSemplice(portafoglio, stats, *args, **kwargs)
 
         p = np.atleast_2d(portafoglio)
-        # Valuta i portafogli su ciascun campione della lista fissa (n_port, nBootstrap)
-        vals = np.column_stack([
-            np.atleast_1d(self._calcolaSemplice(p, s)).ravel()
-            for s in self.listaBootstrap
-        ])
+
+        vals = np.column_stack([np.atleast_1d(self._calcolaSemplice(p, s, *args, **kwargs)).ravel() for s in self.listaBootstrap])
 
         result = self._aggregaValori(vals)
         return result if portafoglio.ndim > 1 else result[0]
 
-    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True, debug=False, *args, **kwargs):
+        if debug and self.faiBootstrap:
+            print(f"\n{Fore.MAGENTA}Calcolo l'indice {self.__class__.__name__}...{Fore.RESET}")
+            t0 = time.time()
+        
         if self.faiBootstrap:
             if self.listaBootstrap:
-                ratio = self._calcolaBootstrapFitness(portafoglio)
+                ratio = self._calcolaBootstrapFitness(portafoglio, stats, *args, **kwargs)
             else:
-                ratio = self._calcolaBootstrap(portafoglio, stats)
+                ratio = self._calcolaBootstrap(portafoglio, stats, *args, **kwargs)
         else:
-            ratio = self._calcolaSemplice(portafoglio, stats)
+            ratio = self._calcolaSemplice(portafoglio, stats, *args, **kwargs)
 
-        return super().calcola(portafoglio, stats, ratio, standardizza, inverti)
+        if debug and self.faiBootstrap:
+            print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
+
+        return super().standardizzaEInverti(ratio, standardizza, inverti)

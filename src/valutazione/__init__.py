@@ -13,11 +13,11 @@ class ValutatoreMultiplo:
         self._indici = indici
         self.numIndici = len(self._indici)
 
-    def fitStandardizza(self, stats, vincoli: Vincoli):
+    def fitStandardizza(self, stats, vincoli: Vincoli, nP=1000):
         print(f"\n{Fore.MAGENTA}Fitto la standardizzazione dei valutatori...{Fore.RESET}")
         t0 = time.time()
 
-        listaPortafogli = generaPortafogliValidi(len(stats.nomi), vincoli, n=10000)
+        listaPortafogli = generaPortafogliValidi(len(stats.nomi), vincoli, n=nP)
 
         for n, i in enumerate(self._indici):
             # Barra di caricamento
@@ -33,7 +33,7 @@ class ValutatoreMultiplo:
         )
         print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
-    def calcola(self, portafoglio, stats, standardizza=False, inverti=False):
+    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
         portafoglio = np.atleast_2d(portafoglio)
 
         res = np.empty((portafoglio.shape[0], len(self._indici)), dtype=np.float64)

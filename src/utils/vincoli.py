@@ -6,11 +6,7 @@ from numba import njit
 def _proietta_riga(w, pct_min, upper_arr, min_titoli):
     n = w.shape[0]
 
-    # Tolleranza per garantire che l'asset attivo sia > pct_min
-    eps_min = 1e-7 if min_titoli * (pct_min + 1e-7) <= 1.0 else 0.0
-    pct_min_eff = pct_min + eps_min
-
-    # 1. Filtro asset eleggibili
+    # 1. Filtro asset eleggibili (upper >= pct_min)
     scores = np.full(n, -1e30)
     n_elig = 0
     for i in range(n):
@@ -61,23 +57,19 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
             w[i] = 0.0
 
     # Verifica preliminare di fattibilità
-    sum_min = 0.0
+    sum_min = k * pct_min
     sum_max = 0.0
     for j in range(k):
-        idx = idx_sorted[j]
-        eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
-        sum_min += eff_lower
-        sum_max += upper_arr[idx]
+        sum_max += upper_arr[idx_sorted[j]]
 
     if sum_max < 1.0 - 1e-12 or sum_min > 1.0 + 1e-12:
         raise ValueError("Impossibile soddisfare i vincoli con somma 1.0")
 
-    # Clamp iniziale
+    # Clamp iniziale con limite esatto pct_min
     for j in range(k):
         idx = idx_sorted[j]
-        eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
-        if w[idx] < eff_lower:
-            w[idx] = eff_lower
+        if w[idx] < pct_min:
+            w[idx] = pct_min
         elif w[idx] > upper_arr[idx]:
             w[idx] = upper_arr[idx]
 
@@ -89,10 +81,9 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
         s = 0.0
         for j in range(k):
             idx = idx_sorted[j]
-            eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
             v = w[idx] + mid
-            if v < eff_lower:
-                v = eff_lower
+            if v < pct_min:
+                v = pct_min
             elif v > upper_arr[idx]:
                 v = upper_arr[idx]
             s += v
@@ -107,10 +98,9 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
     s_final = 0.0
     for j in range(k):
         idx = idx_sorted[j]
-        eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
         v = w[idx] + mid
-        if v < eff_lower:
-            v = eff_lower
+        if v < pct_min:
+            v = pct_min
         elif v > upper_arr[idx]:
             v = upper_arr[idx]
         w[idx] = v
@@ -132,8 +122,7 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
         else:
             for j in range(k):
                 idx = idx_sorted[j]
-                eff_lower = pct_min_eff if upper_arr[idx] >= pct_min_eff else pct_min
-                spazio = w[idx] - eff_lower
+                spazio = w[idx] - pct_min
                 if spazio > 1e-12:
                     delta = min(-residuo, spazio)
                     w[idx] -= delta
@@ -154,7 +143,6 @@ def _applica_vincoli_jit(pesi, percentualeMinima, upper, minTitoli):
 
 def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
     """Valida i vincoli di portafoglio e delega la proiezione al kernel compilato."""
-    # 1. Validazione 'pesi'
     if not isinstance(pesi, np.ndarray):
         pesi = np.asarray(pesi, dtype=np.float64)
     elif not np.issubdtype(pesi.dtype, np.floating):
@@ -165,7 +153,6 @@ def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
 
     n_cols = pesi.shape[-1]
 
-    # 2. Validazione parametri scalari
     if not isinstance(minTitoli, (int, np.integer)) or minTitoli < 1:
         raise ValueError(f"'minTitoli' deve essere un intero >= 1, ricevuto {minTitoli}")
     if minTitoli > n_cols:
@@ -176,7 +163,6 @@ def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
     if not (0.0 <= percentualeMinima <= 1.0):
         raise ValueError(f"'percentualeMinima' deve essere in [0, 1], ricevuto {percentualeMinima}")
 
-    # 3. Risoluzione e validazione 'upper'
     if upper is None:
         upper = np.ones(n_cols, dtype=np.float64)
     else:
@@ -186,7 +172,6 @@ def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
         if np.any(upper < 0.0) or np.any(upper > 1.0):
             raise ValueError("Tutti gli elementi di 'upper' devono essere compresi nell'intervallo [0, 1]")
 
-    # 4. Validazione consistenza matematica globale
     if minTitoli * percentualeMinima > 1.0 + 1e-12:
         raise ValueError(
             f"Problema non fattibile: minTitoli ({minTitoli}) * percentualeMinima ({percentualeMinima}) = "
@@ -206,7 +191,6 @@ def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
             f"Problema non fattibile: somma degli upper bound eleggibili ({somma_upper_elig:.4f}) < 1.0"
         )
 
-    # 5. Assicura memoria contigua per Numba
     if not pesi.flags.c_contiguous:
         pesi = np.ascontiguousarray(pesi)
     if not upper.flags.c_contiguous:

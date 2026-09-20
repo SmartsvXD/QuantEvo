@@ -3,10 +3,6 @@ from sklearn.covariance import LedoitWolf
 
 
 def _calcolaMatriceCorrelazione(rendimenti: np.ndarray) -> np.ndarray:
-    if rendimenti.ndim != 2:
-        n = rendimenti.shape[0] if rendimenti.ndim == 1 else 0
-        return np.eye(n)
-
     n, T = rendimenti.shape
     data_mat = np.empty((T, n), dtype=np.float64)
 

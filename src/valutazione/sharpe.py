@@ -1,23 +1,55 @@
-import time
-
 import numpy as np
-from colorama import Fore
 from numba import njit
 
 from src.const import DEFAULT_N_BOOSTRAP, GIORNI_IN_UN_ANNO, RISK_FREE_RATE
 from src.valutazione.bootstrap import IndiceBootstrap
-from src.valutazione.rischio import RischioTotaleIndice
 
 
 @njit(fastmath=True)
-def _sharpeNumba(portafoglio, rendimentoGiornaliero, varianzaPortafoglio, RF):
-    # rendimento atteso giornaliero per ciascun portafoglio
-    mu_p_daily = np.dot(portafoglio, rendimentoGiornaliero)
+def _sharpeNumba(portafogli, rendimentiCumulati, RF, giorni_in_un_anno):
+    """
+    Calcola lo Sharpe ratio Buy & Hold per uno o più portafogli.
+    rendimentiCumulati: matrice (T + 1, N) con la riga 0 valorizzata a 1.0 (base iniziale).
+    """
+    n_portafogli = portafogli.shape[0]
+    T = rendimentiCumulati.shape[0] - 1
+    risultati = np.empty(n_portafogli, dtype=np.float64)
 
-    mu_annuo = mu_p_daily * GIORNI_IN_UN_ANNO
-    std_annua = np.sqrt(np.maximum(varianzaPortafoglio, 1e-12))
+    for m in range(n_portafogli):
+        w = portafogli[m]
 
-    return (mu_annuo - RF) / std_annua
+        # Valore iniziale del portafoglio al tempo t=0
+        v_prev = 0.0
+        for i in range(len(w)):
+            v_prev += w[i] * rendimentiCumulati[0, i]
+
+        somma_r = 0.0
+        somma_r2 = 0.0
+
+        # Calcolo dei rendimenti giornalieri effettivi non ribilanciati
+        for t in range(1, T + 1):
+            v_curr = 0.0
+            for i in range(len(w)):
+                v_curr += w[i] * rendimentiCumulati[t, i]
+
+            r_t = (v_curr / v_prev) - 1.0
+            v_prev = v_curr
+
+            somma_r += r_t
+            somma_r2 += r_t * r_t
+
+        # Media e varianza campionaria giornaliera
+        mu_daily = somma_r / T
+        var_daily = (somma_r2 - T * (mu_daily**2)) / (T - 1)
+        var_daily = max(var_daily, 0.0)
+
+        # Annualizzazione
+        mu_annuo = mu_daily * giorni_in_un_anno
+        std_annua = np.sqrt(max(var_daily * giorni_in_un_anno, 1e-12))
+
+        risultati[m] = (mu_annuo - RF) / std_annua
+
+    return risultati
 
 
 class SharpeIndice(IndiceBootstrap):
@@ -40,27 +72,30 @@ class SharpeIndice(IndiceBootstrap):
             lambdaPenalitaStabilita=lambdaPenalitaStabilita,
             inverti=inverti,
         )
-
         self.RF = self.calcolaRendimentoPrivoDiRischio()
-        self.rischio = RischioTotaleIndice()
 
     def calcolaRendimentoPrivoDiRischio(self):
         # Da implementare con FRED
         return RISK_FREE_RATE
 
-    def preparaListaBootstrap(self, stats, randomState=None, verbose=True):
-        if verbose:
-            t0 = time.time()
-            print(f"\n{Fore.MAGENTA}Preparando la lista bootstrap per Sharpe...{Fore.RESET}")
-
-        super().preparaListaBootstrap(stats, randomState, verbose)
-
-        if verbose:
-            print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
+    def _ottieniRendimentiCumulati(self, stats):
+        """Precalcola e memorizza la serie dei fattori cumulati per evitare ricalcoli."""
+        if not hasattr(stats, "rendimentiCumulati"):
+            T, N = stats.rendimenti.shape
+            cum = np.empty((T + 1, N), dtype=np.float64)
+            cum[0] = 1.0
+            cum[1:] = np.cumprod(1.0 + stats.rendimenti, axis=0)
+            stats.rendimentiCumulati = cum
+        return stats.rendimentiCumulati
 
     def _calcolaSemplice(self, portafoglio, stats):
         p = np.atleast_2d(portafoglio)
-        varianzaPortafoglio = self.rischio.calcola(p, stats)
-        
-        res = _sharpeNumba(p, stats.rendimentoMedioGiornaliero, varianzaPortafoglio, self.RF)
+        rendimentiCumulati = self._ottieniRendimentiCumulati(stats)
+
+        res = _sharpeNumba(
+            p,
+            rendimentiCumulati,
+            self.RF,
+            GIORNI_IN_UN_ANNO,
+        )
         return res if portafoglio.ndim > 1 else res[0]

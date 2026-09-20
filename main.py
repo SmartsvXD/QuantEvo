@@ -15,6 +15,7 @@ if __name__ == "__main__":
 
     titoli = [x[0] for x in data]
     # Al momento non utilizziamo upper, ma lo lasciamo per eventuali sviluppi futuri
+    # Voglio verificare come si comporta l'algoritmo senza un vincolo di upper, quindi lo imposto a None per ora
     upper = None #[x[1] for x in data]
 
     s = StatsTitoli(titoli, forzaDownload=0, verbose=1)
@@ -23,13 +24,15 @@ if __name__ == "__main__":
     vincoli = Vincoli(percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3)
 
     omega = CAGROmegaIndice(faiBootstrap=1, inverti=True)
-    rischio = RischioTotaleCorrettoIndice()
-    div = DiversificazioneIndice()
+    rischio = RischioTotaleCorrettoIndice(faiBootstrap=1)
+    div = DiversificazioneIndice(faiBootstrap=1)
 
     omega.preparaListaBootstrap(s)
+    rischio.preparaListaBootstrap(s)
+    div.preparaListaBootstrap(s)
 
     v = ValutatoreMultiplo((div, omega, rischio))
-    v.fitStandardizza(s, vincoli)
+    v.fitStandardizza(s, vincoli, nP = 100)
 
     port, ris = run(s, v, vincoli, seeds=None)
 

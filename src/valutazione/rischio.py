@@ -2,34 +2,32 @@ import numpy as np
 from numba import njit, prange
 
 from src.const import (
+    DEFAULT_N_BOOSTRAP,
     DEFAULT_PESO_CVAR,
     DEFAULT_PESO_MD,
 )
+from src.valutazione.bootstrap import IndiceBootstrap
 from src.valutazione.indice import Indice
 
 
 class RischioTotaleIndice(Indice):
-    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
+    def __init__(self, inverti=False):
+        super().__init__(inverti=inverti)
+
+    def _calcolaSemplice(self, portafoglio, stats):
         p = np.atleast_2d(portafoglio)
-        
-        # p shape: (nPort, nAssets)
         valore = np.einsum("pi,ij,pj->p", p, stats.sigma, p)
-        valore = np.sqrt(valore)
-
-        return super().calcola(portafoglio, stats, valore, standardizza, inverti)
+        return np.sqrt(valore)
 
 
-@njit(parallel=True)
+@njit(parallel=True, fastmath=True)
 def calcolaPortReturns(p: np.ndarray, rendimenti: np.ndarray) -> np.ndarray:
     n_p, n_a = p.shape
     n_t = rendimenti.shape[1]
-    out = np.zeros((n_p, n_t), dtype=np.float64)
+    out = np.empty((n_p, n_t), dtype=np.float64)
 
     for i in prange(n_p):
-        # Valore iniziale allocato a ciascun asset (Buy-and-Hold)
-        v = np.empty(n_a, dtype=np.float64)
-        for a in range(n_a):
-            v[a] = p[i, a]
+        v = p[i].copy()  # Copia diretta, evita l'allocazione + ciclo di inizializzazione
 
         for t in range(n_t):
             w_prev = 0.0
@@ -40,8 +38,8 @@ def calcolaPortReturns(p: np.ndarray, rendimenti: np.ndarray) -> np.ndarray:
                 w_prev += v_a
                 r = rendimenti[a, t]
 
-                # Se non c'è dato (NaN), il valore resta invariato (r = 0)
-                if not np.isnan(r) and v_a > 0.0:
+                # 'r == r' è un'alternativa ultra-veloce a np.isnan(r)
+                if r == r and v_a > 0.0:
                     v_a = max(v_a * (1.0 + r), 0.0)
 
                 v[a] = v_a
@@ -55,7 +53,6 @@ def calcolaPortReturns(p: np.ndarray, rendimenti: np.ndarray) -> np.ndarray:
     return out
 
 
-
 @njit(fastmath=True, parallel=True)
 def maxDrawdown(R: np.ndarray) -> np.ndarray:
     n_p, n_t = R.shape
@@ -67,7 +64,6 @@ def maxDrawdown(R: np.ndarray) -> np.ndarray:
         min_dd = 0.0
 
         for t in range(n_t):
-            # Aggiornamento moltiplicativo con protezione al -100%
             r = max(R[i, t], -1.0)
             w *= 1.0 + r
 
@@ -77,7 +73,6 @@ def maxDrawdown(R: np.ndarray) -> np.ndarray:
                 dd = (w - max_w) / max_w
                 min_dd = min(min_dd, dd)
 
-            # Se il capitale si azzera, il drawdown tocca il limite minimo (-100%)
             if w <= 0.0:
                 min_dd = -1.0
                 break
@@ -94,62 +89,80 @@ def rischioTailCVar(R: np.ndarray, alpha: float = 0.05) -> np.ndarray:
     k_tail = max(1, int(n_t * alpha))
 
     for i in prange(n_p):
-        row = R[i].copy()
-        row.sort()
-        out[i] = np.mean(row[:k_tail])
+        # np.partition sposta i k_tail elementi più piccoli all'inizio in O(N)
+        # Evita l'ordinamento completo O(N log N) di row.sort()
+        part = np.partition(R[i], k_tail)
+        out[i] = np.mean(part[:k_tail])
 
     return out
 
 
 class RiscioMaxDrawdownIndice(Indice):
-    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
-        p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
-
-        port_returns = calcolaPortReturns(p, stats.rendimenti)
-        md = maxDrawdown(port_returns)
-
-        return super().calcola(portafoglio, stats, md, standardizza, inverti)
+    def _calcolaSemplice(self, portafoglio, stats, portReturns=None):
+        if portReturns is None:
+            portReturns = calcolaPortReturns(
+                np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64), stats.rendimenti
+            )
+        return maxDrawdown(portReturns)
 
 
 class RischioTailCVarIndice(Indice):
-    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
-        p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
+    def __init__(self, alpha=0.05, inverti=False):
+        super().__init__(inverti=inverti)
+        self.alpha = alpha
 
-        port_returns = calcolaPortReturns(p, stats.rendimenti)
-        cvar = rischioTailCVar(port_returns)
+    def _calcolaSemplice(self, portafoglio, stats, portReturns=None):
+        if portReturns is None:
+            portReturns = calcolaPortReturns(
+                np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64), stats.rendimenti
+            )
+        return rischioTailCVar(portReturns, alpha=self.alpha)
 
-        return super().calcola(portafoglio, stats, cvar, standardizza, inverti)
 
-
-class RischioTotaleCorrettoIndice(Indice):
+class RischioTotaleCorrettoIndice(IndiceBootstrap):
     def __init__(
         self,
+        faiBootstrap=False,
+        nBootstrap=DEFAULT_N_BOOSTRAP,
+        lunghezzaBlocco=20,
+        metricaRischio="cvar",
+        alpha=0.05,
+        lambdaPenalitaStabilita=0.4,
         pesoMD=DEFAULT_PESO_MD,
         pesoCVar=DEFAULT_PESO_CVAR,
+        alphaCVar=0.05,
         inverti=False,
     ):
-        super().__init__(inverti=inverti)
+        super().__init__(
+            metricaRischio=metricaRischio,
+            alpha=alpha,
+            lambdaPenalitaStabilita=lambdaPenalitaStabilita,
+            inverti=inverti,
+            faiBootstrap=faiBootstrap,
+            nBootstrap=nBootstrap,
+            lunghezzaBlocco=lunghezzaBlocco,
+        )
 
         self.pesoMD = pesoMD
         self.pesoCVar = pesoCVar
 
         self.rischioTotale = RischioTotaleIndice()
         self.rischioMD = RiscioMaxDrawdownIndice()
-        self.rischioCVar = RischioTailCVarIndice()
+        self.rischioCVar = RischioTailCVarIndice(alpha=alphaCVar)
 
-    def fitStandardizza(self, portafoglio, stats):
-        self.rischioMD.fitStandardizza(portafoglio, stats)
-        self.rischioCVar.fitStandardizza(portafoglio, stats)
-        self.rischioTotale.fitStandardizza(portafoglio, stats)
-        super().fitStandardizza(portafoglio, stats)
+    def fitStandardizza(self, portafogli, stats):
+        self.rischioMD.fitStandardizza(portafogli, stats)
+        self.rischioCVar.fitStandardizza(portafogli, stats)
+        self.rischioTotale.fitStandardizza(portafogli, stats)
+        super().fitStandardizza(portafogli, stats)
 
-    def calcola(self, portafoglio, stats, standardizza=True, inverti=True):
+    def _calcolaSemplice(self, portafoglio, stats):
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
 
-        rischio = self.rischioTotale.calcola(p, stats, standardizza=True)
+        portReturns = calcolaPortReturns(p, stats.rendimenti)
 
-        md = self.rischioMD.calcola(p, stats, standardizza=True)
-        cvar = self.rischioCVar.calcola(p, stats, standardizza=True)
+        rischio = self.rischioTotale.calcola(p, stats)
+        md = self.rischioMD.calcola(p, stats, portReturns=portReturns)
+        cvar = self.rischioCVar.calcola(p, stats, portReturns=portReturns)
 
-        rischioCorretto = rischio - self.pesoMD * md - self.pesoCVar * cvar
-        return super().calcola(portafoglio, stats, rischioCorretto, standardizza, inverti)
+        return rischio - self.pesoMD * md - self.pesoCVar * cvar
