@@ -1,7 +1,7 @@
 import numpy as np
 from numba import njit
 
-from src.const import DEFAULT_N_BOOSTRAP, GIORNI_IN_UN_ANNO, MIN_OMEGA_VALUE
+from src.const import GIORNI_IN_UN_ANNO, MIN_OMEGA_VALUE
 from src.valutazione.bootstrap import IndiceBootstrap
 
 
@@ -52,8 +52,6 @@ class OmegaIndice(IndiceBootstrap):
         self,
         sogliaAnnua=0.0,
         faiBootstrap=False,
-        nBootstrap=DEFAULT_N_BOOSTRAP,
-        lunghezzaBlocco=20,
         metricaRischio="cvar",
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
@@ -61,8 +59,6 @@ class OmegaIndice(IndiceBootstrap):
     ):
         super().__init__(
             faiBootstrap=faiBootstrap,
-            nBootstrap=nBootstrap,
-            lunghezzaBlocco=lunghezzaBlocco,
             metricaRischio=metricaRischio,
             alpha=alpha,
             lambdaPenalitaStabilita=lambdaPenalitaStabilita,
@@ -85,8 +81,6 @@ class CAGROmegaIndice(IndiceBootstrap):
         self,
         sogliaAnnua=0.0,
         faiBootstrap=False,
-        nBootstrap=DEFAULT_N_BOOSTRAP,
-        lunghezzaBlocco=20,
         metricaRischio="cvar",
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
@@ -94,8 +88,6 @@ class CAGROmegaIndice(IndiceBootstrap):
     ):
         super().__init__(
             faiBootstrap=faiBootstrap,
-            nBootstrap=nBootstrap,
-            lunghezzaBlocco=lunghezzaBlocco,
             metricaRischio=metricaRischio,
             alpha=alpha,
             lambdaPenalitaStabilita=lambdaPenalitaStabilita,
@@ -105,8 +97,6 @@ class CAGROmegaIndice(IndiceBootstrap):
         self.omegaIndice = OmegaIndice(
             sogliaAnnua=sogliaAnnua,
             faiBootstrap=False,
-            nBootstrap=nBootstrap,
-            lunghezzaBlocco=lunghezzaBlocco,
             metricaRischio=metricaRischio,
             alpha=alpha,
             lambdaPenalitaStabilita=lambdaPenalitaStabilita,

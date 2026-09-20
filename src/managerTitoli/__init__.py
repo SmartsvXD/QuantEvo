@@ -4,10 +4,13 @@ import numpy as np
 from colorama import Fore
 from sklearn.covariance import LedoitWolf
 
-from src.const import DEFAULT_LAMBDA_EWMA, DEFAULT_MEAN_SHRINKAGE, GIORNI_IN_UN_ANNO
+from src.const import (
+    DEFAULT_LAMBDA_EWMA,
+    DEFAULT_MEAN_SHRINKAGE,
+    DEFAULT_N_BOOSTRAP,
+    N_PUNTI_BARRA_CARICAMENTO,
+)
 from src.managerTitoli.downloadStorico import download
-from src.managerTitoli.ewma import mediaEWMA, stdEWMA
-from src.managerTitoli.matriceCorrelazione import _calcolaMatriceCorrelazione
 
 
 class StatsTitoliSemplice:
@@ -15,11 +18,11 @@ class StatsTitoliSemplice:
         self._lambdaEWMA = lambdaEWMA
         self._shrink = shrink
 
-        #     self.rendimentoMedioGiornaliero = None
-        #     self.stdRendimentiGiornaliera = None
         self.rendimenti = rendimenti
         self.corr = None
         self.sigma = None
+
+        self.listaBootstrap = []
 
     def calcolaMatriceCorrelazioneECovarianza(self, rendimenti):
         n, T = rendimenti.shape
@@ -61,6 +64,50 @@ class StatsTitoliSemplice:
     def calcolaStats(self):
         # Diversificazione, Rischio
         self.corr, self.sigma = self.calcolaMatriceCorrelazioneECovarianza(self.rendimenti)
+
+    def _generaIndiciBlocchi(self, T: int, nBootstrap: int, lunghezzaBlocco: int, rng: np.random.Generator):
+        blocco = max(2, min(int(lunghezzaBlocco), T))
+        n_blocchi = int(np.ceil(T / blocco))
+        max_start = max(1, T - blocco + 1)
+        start = rng.integers(0, max_start, size=(nBootstrap, n_blocchi))
+        offset = np.arange(blocco, dtype=np.int64)
+        idx = (start[:, :, None] + offset[None, None, :]).reshape(nBootstrap, -1)
+        return idx[:, :T]
+
+    def preparaListaBootstrap(
+        self,
+        nBootstrap: int = DEFAULT_N_BOOSTRAP,
+        lunghezzaBlocco: int = 20,
+        randomState=None,
+        verbose: bool = True,
+    ):
+        if verbose:
+            t0 = time.time()
+            print(f"\n{Fore.MAGENTA}Preparando la lista bootstrap per {self.__class__.__name__}...{Fore.RESET}")
+
+        self.listaBootstrap = []
+        T = self.rendimenti.shape[1]
+
+        if T < 2 or nBootstrap <= 0:
+            return
+
+        rng = np.random.default_rng(randomState)
+        idxs = self._generaIndiciBlocchi(T, nBootstrap, lunghezzaBlocco, rng)
+
+        for i in range(len(idxs)):
+            sample = self.rendimenti[:, idxs[i]]
+            s = StatsTitoliSemplice(sample, lambdaEWMA=self._lambdaEWMA, shrink=self._shrink)
+            s.calcolaStats()
+            self.listaBootstrap.append(s)
+
+            if verbose and i % 10 == 0:
+                filled = round(i / len(idxs) * N_PUNTI_BARRA_CARICAMENTO)
+                empty = N_PUNTI_BARRA_CARICAMENTO - filled
+                print(f"\r{Fore.LIGHTBLACK_EX}{i}/{len(idxs)} [{'*' * filled}{' ' * empty}]{Fore.RESET}", end="")
+
+        if verbose:
+            print(f"\r{Fore.LIGHTBLACK_EX}{len(idxs)}/{len(idxs)} [{'*' * N_PUNTI_BARRA_CARICAMENTO}]{Fore.RESET}")
+            print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
 
 class StatsTitoli(StatsTitoliSemplice):

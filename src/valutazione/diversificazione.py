@@ -5,7 +5,6 @@ from src.const import (
     DEFAULT_EPSILON_CARDINALITA,
     DEFAULT_MAX_TITOLI_CARD,
     DEFAULT_MIN_TITOLI_CARD,
-    DEFAULT_N_BOOSTRAP,
     DEFAULT_PESO_CARD,
 )
 from src.valutazione.bootstrap import IndiceBootstrap
@@ -70,8 +69,6 @@ class DiversificazioneIndice(IndiceBootstrap):
     def __init__(
         self,
         faiBootstrap=False,
-        nBootstrap=DEFAULT_N_BOOSTRAP,
-        lunghezzaBlocco=20,
         metricaRischio="cvar",
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
@@ -90,8 +87,6 @@ class DiversificazioneIndice(IndiceBootstrap):
         super().__init__(
             inverti=inverti,
             faiBootstrap=faiBootstrap,
-            nBootstrap=nBootstrap,
-            lunghezzaBlocco=lunghezzaBlocco,
             metricaRischio=metricaRischio,
             alpha=alpha,
             lambdaPenalitaStabilita=lambdaPenalitaStabilita,

@@ -1,7 +1,7 @@
 import numpy as np
 from numba import njit
 
-from src.const import DEFAULT_N_BOOSTRAP, GIORNI_IN_UN_ANNO, RISK_FREE_RATE
+from src.const import GIORNI_IN_UN_ANNO, RISK_FREE_RATE
 from src.valutazione.bootstrap import IndiceBootstrap
 
 
@@ -56,8 +56,6 @@ class SharpeIndice(IndiceBootstrap):
     def __init__(
         self,
         faiBootstrap=False,
-        nBootstrap=DEFAULT_N_BOOSTRAP,
-        lunghezzaBlocco=20,
         metricaRischio="cvar",
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
@@ -65,8 +63,6 @@ class SharpeIndice(IndiceBootstrap):
     ):
         super().__init__(
             faiBootstrap=faiBootstrap,
-            nBootstrap=nBootstrap,
-            lunghezzaBlocco=lunghezzaBlocco,
             metricaRischio=metricaRischio,
             alpha=alpha,
             lambdaPenalitaStabilita=lambdaPenalitaStabilita,
@@ -79,14 +75,14 @@ class SharpeIndice(IndiceBootstrap):
         return RISK_FREE_RATE
 
     def _ottieniRendimentiCumulati(self, stats):
-        """Precalcola e memorizza la serie dei fattori cumulati per evitare ricalcoli."""
-        if not hasattr(stats, "rendimentiCumulati"):
-            T, N = stats.rendimenti.shape
-            cum = np.empty((T + 1, N), dtype=np.float64)
-            cum[0] = 1.0
-            cum[1:] = np.cumprod(1.0 + stats.rendimenti, axis=0)
-            stats.rendimentiCumulati = cum
-        return stats.rendimentiCumulati
+        """Precalcola e memorizza la serie dei fattori cumulati (T + 1, N)."""
+        N, T = stats.rendimenti.shape
+        cum = np.empty((T + 1, N), dtype=np.float64)
+        cum[0] = 1.0
+        # Trasponi i rendimenti per accumulare lungo l'asse temporale (T)
+        cum[1:] = np.cumprod(1.0 + stats.rendimenti.T, axis=0)
+        return cum
+
 
     def _calcolaSemplice(self, portafoglio, stats):
         p = np.atleast_2d(portafoglio)

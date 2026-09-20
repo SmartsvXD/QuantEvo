@@ -1,11 +1,7 @@
 import numpy as np
 from numba import njit, prange
 
-from src.const import (
-    DEFAULT_N_BOOSTRAP,
-    DEFAULT_PESO_CVAR,
-    DEFAULT_PESO_MD,
-)
+from src.const import DEFAULT_PESO_CVAR, DEFAULT_PESO_MD
 from src.valutazione.bootstrap import IndiceBootstrap
 from src.valutazione.indice import Indice
 
@@ -123,8 +119,6 @@ class RischioTotaleCorrettoIndice(IndiceBootstrap):
     def __init__(
         self,
         faiBootstrap=False,
-        nBootstrap=DEFAULT_N_BOOSTRAP,
-        lunghezzaBlocco=20,
         metricaRischio="cvar",
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
@@ -139,8 +133,6 @@ class RischioTotaleCorrettoIndice(IndiceBootstrap):
             lambdaPenalitaStabilita=lambdaPenalitaStabilita,
             inverti=inverti,
             faiBootstrap=faiBootstrap,
-            nBootstrap=nBootstrap,
-            lunghezzaBlocco=lunghezzaBlocco,
         )
 
         self.pesoMD = pesoMD
