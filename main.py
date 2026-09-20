@@ -19,14 +19,13 @@ if __name__ == "__main__":
     upper = None #[x[1] for x in data]
 
     s = StatsTitoli(titoli, forzaDownload=0, verbose=1)
-    s.calcolaStats()
-    s.preparaListaBootstrap()
+    s.preparaBootstrap()
 
     vincoli = Vincoli(percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3)
 
-    omega = CAGROmegaIndice(faiBootstrap=1, inverti=True)
-    rischio = RischioTotaleCorrettoIndice(faiBootstrap=1)
-    div = DiversificazioneIndice(faiBootstrap=1)
+    omega = CAGROmegaIndice(inverti=True)
+    rischio = RischioTotaleCorrettoIndice()
+    div = DiversificazioneIndice()
 
     v = ValutatoreMultiplo((div, omega, rischio))
     v.fitStandardizza(s, vincoli, nP = 100)

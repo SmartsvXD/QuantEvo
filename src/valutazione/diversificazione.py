@@ -7,30 +7,7 @@ from src.const import (
     DEFAULT_MIN_TITOLI_CARD,
     DEFAULT_PESO_CARD,
 )
-from src.valutazione.bootstrap import IndiceBootstrap
-
-
-@njit(fastmath=True)
-def _diversificazione(portafoglio, quadCorr):
-    quadCorr = np.maximum(quadCorr, 1e-12)
-    enb = 1.0 / quadCorr
-
-    if portafoglio.shape[1] > 1:
-        enb_norm = (enb - 1.0) / (portafoglio.shape[1] - 1.0)
-    else:
-        enb_norm = np.zeros_like(enb)
-
-    enb_norm = np.clip(enb_norm, 0.0, 1.0)
-
-    hhi = np.sum(portafoglio * portafoglio, axis=1)
-    if portafoglio.shape[1] > 1:
-        hhi_norm = (hhi - 1.0 / portafoglio.shape[1]) / (1.0 - 1.0 / portafoglio.shape[1])
-    else:
-        hhi_norm = np.ones_like(hhi)
-
-    hhi_norm = np.clip(hhi_norm, 0.0, 1.0)
-
-    return (1.0 - enb_norm) + hhi_norm
+from src.valutazione.indice import Indice
 
 
 @njit(fastmath=True)
@@ -65,10 +42,9 @@ def penaltyCardinalita(
     return res
 
 
-class DiversificazioneIndice(IndiceBootstrap):
+class DiversificazioneIndice(Indice):
     def __init__(
         self,
-        faiBootstrap=False,
         metricaRischio="cvar",
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
@@ -86,21 +62,28 @@ class DiversificazioneIndice(IndiceBootstrap):
 
         super().__init__(
             inverti=inverti,
-            faiBootstrap=faiBootstrap,
             metricaRischio=metricaRischio,
             alpha=alpha,
             lambdaPenalitaStabilita=lambdaPenalitaStabilita,
         )
 
-    def _calcolaSemplice(self, portafoglio, stats):
-        portafoglio = np.atleast_2d(portafoglio)
+    def _calcola(self, portafoglio: np.ndarray, stats: dict) -> np.ndarray:
+        p = np.atleast_2d(portafoglio)
+        # tensori["corr"] ha forma (B, N, N) sia con B=1 che con B>1
+        quadCorr = np.einsum("pi,bij,pj->pb", p, stats["corr"], p)
+        quadCorr = np.maximum(quadCorr, 1e-12)
 
-        quadCorr = np.einsum("pi,ij,pj->p", portafoglio, stats.corr, portafoglio)
+        enb = 1.0 / quadCorr
+        n_assets = p.shape[1]
+        enb_norm = (enb - 1.0) / (n_assets - 1.0) if n_assets > 1 else np.zeros_like(enb)
+        enb_norm = np.clip(enb_norm, 0.0, 1.0)
 
-        val = _diversificazione(portafoglio, quadCorr)
+        hhi = np.sum(p * p, axis=1, keepdims=True)
+        hhi_norm = (hhi - 1.0 / n_assets) / (1.0 - 1.0 / n_assets) if n_assets > 1 else np.ones_like(hhi)
+        hhi_norm = np.clip(hhi_norm, 0.0, 1.0)
 
-        val += self.pesoCard * penaltyCardinalita(
-            portafoglio, minTitoli=self.cardMinTitoli, maxTitoli=self.cardMaxTitoli, epsilon=self.cardEpsilon
-        )
-        
-        return val
+        pen = penaltyCardinalita(
+            p, minTitoli=self.cardMinTitoli, maxTitoli=self.cardMaxTitoli, epsilon=self.cardEpsilon
+        )[:, None]
+
+        return (1.0 - enb_norm) + hhi_norm + self.pesoCard * pen  # Shape sempre (P, B)

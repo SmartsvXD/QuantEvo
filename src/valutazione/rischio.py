@@ -2,7 +2,7 @@ import numpy as np
 from numba import njit, prange
 
 from src.const import DEFAULT_PESO_CVAR, DEFAULT_PESO_MD
-from src.valutazione.bootstrap import IndiceBootstrap
+from src.valutazione.indice import Indice
 from src.valutazione.indice import Indice
 
 
@@ -10,41 +10,32 @@ class RischioTotaleIndice(Indice):
     def __init__(self, inverti=False):
         super().__init__(inverti=inverti)
 
-    def _calcolaSemplice(self, portafoglio, stats):
+    def _calcola(self, portafoglio: np.ndarray, tensori: dict):
         p = np.atleast_2d(portafoglio)
-        valore = np.einsum("pi,ij,pj->p", p, stats.sigma, p)
-        return np.sqrt(valore)
+        return np.sqrt(np.einsum("pi,bij,pj->pb", p, tensori["sigma"], p))
 
 
 @njit(parallel=True, fastmath=True)
-def calcolaPortReturns(p: np.ndarray, rendimenti: np.ndarray) -> np.ndarray:
+def calcolaPortReturns(p: np.ndarray, rendimenti_boot: np.ndarray) -> np.ndarray:
     n_p, n_a = p.shape
-    n_t = rendimenti.shape[1]
-    out = np.empty((n_p, n_t), dtype=np.float64)
+    n_b, _, n_t = rendimenti_boot.shape
+    out = np.empty((n_p, n_b, n_t), dtype=np.float64)
 
     for i in prange(n_p):
-        v = p[i].copy()  # Copia diretta, evita l'allocazione + ciclo di inizializzazione
-
-        for t in range(n_t):
-            w_prev = 0.0
-            w_curr = 0.0
-
-            for a in range(n_a):
-                v_a = v[a]
-                w_prev += v_a
-                r = rendimenti[a, t]
-
-                # 'r == r' è un'alternativa ultra-veloce a np.isnan(r)
-                if r == r and v_a > 0.0:
-                    v_a = max(v_a * (1.0 + r), 0.0)
-
-                v[a] = v_a
-                w_curr += v_a
-
-            if w_prev > 0.0:
-                out[i, t] = (w_curr - w_prev) / w_prev
-            else:
-                out[i, t] = 0.0
+        for b in range(n_b):
+            v = p[i].copy()
+            for t in range(n_t):
+                w_prev = 0.0
+                w_curr = 0.0
+                for a in range(n_a):
+                    v_a = v[a]
+                    w_prev += v_a
+                    r = rendimenti_boot[b, a, t]
+                    if r == r and v_a > 0.0:
+                        v_a = max(v_a * (1.0 + r), 0.0)
+                    v[a] = v_a
+                    w_curr += v_a
+                out[i, b, t] = (w_curr - w_prev) / w_prev if w_prev > 0.0 else 0.0
 
     return out
 
@@ -93,13 +84,21 @@ def rischioTailCVar(R: np.ndarray, alpha: float = 0.05) -> np.ndarray:
     return out
 
 
-class RiscioMaxDrawdownIndice(Indice):
+class RischioMaxDrawdownIndice(Indice):
     def _calcolaSemplice(self, portafoglio, stats, portReturns=None):
         if portReturns is None:
             portReturns = calcolaPortReturns(
-                np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64), stats.rendimenti
+                np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64), stats.stats["rendimenti"]
             )
         return maxDrawdown(portReturns)
+
+    def _calcola(self, portafoglio: np.ndarray, tensori: dict, portReturns=None):
+        p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
+        if portReturns is None:
+            portReturns = calcolaPortReturns(p, tensori["rendimenti"])
+        nP, nB, nT = portReturns.shape
+        flat_dd = maxDrawdown(portReturns.reshape(nP * nB, nT))
+        return flat_dd.reshape(nP, nB)
 
 
 class RischioTailCVarIndice(Indice):
@@ -107,18 +106,18 @@ class RischioTailCVarIndice(Indice):
         super().__init__(inverti=inverti)
         self.alpha = alpha
 
-    def _calcolaSemplice(self, portafoglio, stats, portReturns=None):
+    def _calcola(self, portafoglio: np.ndarray, tensori: dict, portReturns=None):
+        p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
         if portReturns is None:
-            portReturns = calcolaPortReturns(
-                np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64), stats.rendimenti
-            )
-        return rischioTailCVar(portReturns, alpha=self.alpha)
+            portReturns = calcolaPortReturns(p, tensori["rendimenti"])
+        nP, nB, nT = portReturns.shape
+        flat_cvar = rischioTailCVar(portReturns.reshape(nP * nB, nT), alpha=self.alpha)
+        return flat_cvar.reshape(nP, nB)
 
 
-class RischioTotaleCorrettoIndice(IndiceBootstrap):
+class RischioTotaleCorrettoIndice(Indice):
     def __init__(
         self,
-        faiBootstrap=False,
         metricaRischio="cvar",
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
@@ -132,14 +131,13 @@ class RischioTotaleCorrettoIndice(IndiceBootstrap):
             alpha=alpha,
             lambdaPenalitaStabilita=lambdaPenalitaStabilita,
             inverti=inverti,
-            faiBootstrap=faiBootstrap,
         )
 
         self.pesoMD = pesoMD
         self.pesoCVar = pesoCVar
 
         self.rischioTotale = RischioTotaleIndice()
-        self.rischioMD = RiscioMaxDrawdownIndice()
+        self.rischioMD = RischioMaxDrawdownIndice()
         self.rischioCVar = RischioTailCVarIndice(alpha=alphaCVar)
 
     def fitStandardizza(self, portafogli, stats):
@@ -148,13 +146,12 @@ class RischioTotaleCorrettoIndice(IndiceBootstrap):
         self.rischioTotale.fitStandardizza(portafogli, stats)
         super().fitStandardizza(portafogli, stats)
 
-    def _calcolaSemplice(self, portafoglio, stats):
+    def _calcola(self, portafoglio: np.ndarray, tensori: dict):
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
+        portReturns = calcolaPortReturns(p, tensori["rendimenti"])
 
-        portReturns = calcolaPortReturns(p, stats.rendimenti)
-
-        rischio = self.rischioTotale.calcola(p, stats)
-        md = self.rischioMD.calcola(p, stats, portReturns=portReturns)
-        cvar = self.rischioCVar.calcola(p, stats, portReturns=portReturns)
+        rischio = self.rischioTotale._calcola(p, tensori)
+        md = self.rischioMD._calcola(p, tensori, portReturns=portReturns)
+        cvar = self.rischioCVar._calcola(p, tensori, portReturns=portReturns)
 
         return rischio - self.pesoMD * md - self.pesoCVar * cvar

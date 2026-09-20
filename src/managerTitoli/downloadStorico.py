@@ -8,7 +8,6 @@ import yfinance as yf
 from colorama import Fore
 
 from src.const import GIORNI_MINIMI_VALIDITA
-from src.managerTitoli.preprocessing import preprocessaRendimenti
 
 
 def _downloadYFinance(nomi: tuple, anni: int):
@@ -59,10 +58,6 @@ def _downloadYFinance(nomi: tuple, anni: int):
     # * Trasforma i dati in numpy array
     # Usa rendimenti lineari
     rendimenti = np.array(adjClose.pct_change().dropna().T, dtype=np.float64)  # shape: (n_assets, n_days)
-
-    # * Preprocessa i rendimenti
-    # Al momento non viene fatto nulla, ma la funzione è pronta per eventuali preprocessamenti futuri
-    # rendimenti = preprocessaRendimenti(rendimenti)
 
     return rendimenti
 
