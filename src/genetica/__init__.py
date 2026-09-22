@@ -9,7 +9,7 @@ from pymoo.optimize import minimize
 from pymoo.termination import get_termination
 
 from src.genetica.pymoo import EarlyStoppingCallback, PortfolioRepair, ProblemaPortafoglio, ValidPortfolioSampling
-from src.genetica.utils import ordina
+from src.genetica.utils import ordina, stima_hv_ref_point
 from src.managerTitoli import StatsTitoli
 from src.utils.repair import PortfolioConstraints
 from src.valutazione import ValutatoreMultiplo
@@ -18,12 +18,14 @@ from src.valutazione import ValutatoreMultiplo
 def run(
     statsStoriche: StatsTitoli,
     valutatore: ValutatoreMultiplo,
-    vincoli: PortfolioConstraints,
+    constraints: PortfolioConstraints,
+    vincoli: ValutatoreMultiplo = None,
     popSize=200,
     nGen=500,
     seeds=None,
     faiEarlyStopping=True,
     pazienzaEarlyStopping=40,
+    stima_ref_point=True,
     hv_ref_point=None,
     verbose=1,
 ):
@@ -41,13 +43,13 @@ def run(
         seed_int = int(s)
         np.random.seed(seed_int)
 
-        problem = ProblemaPortafoglio(statsStoriche, nValutazioni, valutatore=valutatore)
+        problem = ProblemaPortafoglio(statsStoriche, nValutazioni, valutatore=valutatore, vincoli=vincoli)
 
-        sampling = ValidPortfolioSampling(nValutazioni, vincoli=vincoli)
-        repair = PortfolioRepair(vincoli=vincoli)
+        sampling = ValidPortfolioSampling(nValutazioni, constraints=constraints)
+        repair = PortfolioRepair(constraints=constraints)
 
         algorithm = NSGA2(
-            pop_size=popSize,  
+            pop_size=popSize,
             sampling=sampling,
             crossover=SBX(prob=0.9, eta=20),
             mutation=PM(prob=1.0 / nValutazioni, eta=25),
@@ -58,6 +60,9 @@ def run(
 
         callback = None
         if faiEarlyStopping:
+            if stima_ref_point and hv_ref_point is None:
+                hv_ref_point = stima_hv_ref_point(statsStoriche, valutatore, constraints)
+            
             callback = EarlyStoppingCallback(
                 patience=pazienzaEarlyStopping,
                 min_improvement=1e-5,
@@ -68,8 +73,15 @@ def run(
         res = minimize(problem, algorithm, termination, seed=seed_int, verbose=bool(verbose), callback=callback)
 
         if res.X is not None and len(res.X) > 0:
-            all_F.append(np.atleast_2d(res.F))
-            all_X.append(np.atleast_2d(res.X))
+            cv_ottimi = np.atleast_2d(res.CV)
+            ammissibili = np.all(cv_ottimi <= 1e-6, axis=1)
+            
+            if np.any(ammissibili):
+                all_F.append(np.atleast_2d(res.F)[ammissibili])
+                all_X.append(np.atleast_2d(res.X)[ammissibili])
+            else:
+                if verbose >= 1:
+                    print(f"{Fore.YELLOW}Attenzione: nessuna soluzione ammissibile trovata per il seed {seed_int}.{Fore.RESET}")
 
     if not all_F:
         return [], []
@@ -77,7 +89,7 @@ def run(
     F_concat = np.vstack(all_F)
     X_concat = np.vstack(all_X)
 
-    ris, port = ordina(F_concat, X_concat, vincoli=vincoli)
+    ris, port = ordina(F_concat, X_concat, constraints=constraints)
 
     if verbose >= 1:
         print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")

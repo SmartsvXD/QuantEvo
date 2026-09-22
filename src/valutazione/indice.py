@@ -8,24 +8,36 @@ class Indice:
     def __init__(
         self,
         metricaRischio="cvar",
+        soglia=0.0,
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
-        inverti=False,
+        daMassimizzare=False,
+        debug=False,
     ):
-        self.inverti = inverti
+        self.daMassimizzare = daMassimizzare
         self.metricaRischio = metricaRischio
         self.alpha = alpha
         self.lambdaPenalitaStabilita = lambdaPenalitaStabilita
+        self.soglia = soglia
+
+        self.puoFareBootstrap = True
+        self.debug = debug
 
     def _aggregaValori(self, vals: np.ndarray):
         if self.metricaRischio == "cvar":
-            q = np.quantile(vals, self.alpha, axis=1, keepdims=True)
-            mask = vals <= q
+            if self.daMassimizzare:
+                q = np.quantile(vals, self.alpha, axis=1, keepdims=True)
+                mask = vals <= q
+            else:
+                q = np.quantile(vals, 1.0 - self.alpha, axis=1, keepdims=True)
+                mask = vals >= q
+
             counts = np.maximum(1, np.sum(mask, axis=1))
             return np.sum(np.where(mask, vals, 0.0), axis=1) / counts
 
         elif self.metricaRischio == "percentile":
-            return np.quantile(vals, self.alpha, axis=1)
+            q_target = self.alpha if self.daMassimizzare else (1.0 - self.alpha)
+            return np.quantile(vals, q_target, axis=1)
 
         elif self.metricaRischio == "downside_penalty":
             media = np.mean(vals, axis=1)
@@ -43,12 +55,15 @@ class Indice:
         portafoglio,
         stats,
         faiBootstrap=True,
-        inverti=True,
+        valoreOriginale=False,
         debug=False,
         *args,
         **kwargs,
     ):
-        if debug and faiBootstrap:
+        faiBootstrap = faiBootstrap and self.puoFareBootstrap
+        debug = debug or self.debug
+
+        if debug:
             print(f"\n{Fore.MAGENTA}Calcolo l'indice {self.__class__.__name__}...{Fore.RESET}")
             t0 = time.time()
 
@@ -66,10 +81,13 @@ class Indice:
         if portafoglio.ndim == 1:
             data = data[0]
 
-        if debug and faiBootstrap:
-            print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
+        if debug:
+            print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s) Valore medio: {np.mean(data):.6f}")
 
-        if self.inverti and inverti:
-            data = -data
+        if not valoreOriginale:
+            if self.soglia != 0.0:
+                data = (data - self.soglia) / abs(self.soglia)
+            if self.daMassimizzare:
+                data = -data
 
         return data

@@ -5,20 +5,6 @@ from src.valutazione.indice import Indice
 
 
 class CAGRIndice(Indice):
-    def __init__(
-        self,
-        metricaRischio="cvar",
-        alpha=0.05,
-        lambdaPenalitaStabilita=0.4,
-        inverti=False,
-    ):
-        super().__init__(
-            metricaRischio=metricaRischio,
-            alpha=alpha,
-            lambdaPenalitaStabilita=lambdaPenalitaStabilita,
-            inverti=inverti,
-        )
-
     def _calcola(self, portafoglio: np.ndarray, tensori: dict):
         p = np.atleast_2d(portafoglio)
         rend_boot = tensori["rendimenti"]
@@ -32,5 +18,4 @@ class CAGRIndice(Indice):
         cagr = np.where(valore_finale > 0.0, valore_finale**esponente - 1.0, -1.0)
         cagr = np.where(np.isnan(cagr), 0.0, cagr)
 
-        # Se inverti=True, pymoo minimizza (-CAGR), ossia massimizza il rendimento
         return cagr

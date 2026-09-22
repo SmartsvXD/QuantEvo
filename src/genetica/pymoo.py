@@ -11,37 +11,37 @@ from src.valutazione import ValutatoreMultiplo
 
 
 class ValidPortfolioSampling(Sampling):
-    def __init__(self, nValutazioni, vincoli: PortfolioConstraints):
+    def __init__(self, nValutazioni, constraints: PortfolioConstraints):
         super().__init__()
         self.nValutazioni = nValutazioni
-        self.vincoli = vincoli
+        self.constraints = constraints
 
     def _do(self, problem, n_samples, **kwargs):
         X = []
         for _ in range(n_samples):
             pesi = np.random.rand(self.nValutazioni)
-            pesi = self._applica_vincoli(pesi)
+            pesi = self._apply_constraints(pesi)
             X.append(pesi)
         return np.array(X)
 
-    def _applica_vincoli(self, pesi):
-        return self.vincoli.applica(pesi)
+    def _apply_constraints(self, pesi):
+        return self.constraints.applica(pesi)
 
 
 class PortfolioRepair(Repair):
-    def __init__(self, vincoli: PortfolioConstraints):
+    def __init__(self, constraints: PortfolioConstraints):
         super().__init__()
-        self.vincoli = vincoli
+        self.constraints = constraints
 
     def _do(self, problem, X, **kwargs):
         X_repaired = []
         for ind in X:
-            ind_repaired = self._applica_vincoli(ind)
+            ind_repaired = self._apply_constraints(ind)
             X_repaired.append(ind_repaired)
         return np.array(X_repaired)
 
-    def _applica_vincoli(self, pesi):
-        return self.vincoli.applica(pesi)
+    def _apply_constraints(self, pesi):
+        return self.constraints.applica(pesi)
 
 
 class ProblemaPortafoglio(Problem):
@@ -50,14 +50,23 @@ class ProblemaPortafoglio(Problem):
         statsStoriche: StatsTitoli,
         nValutazioni,
         valutatore: ValutatoreMultiplo,
+        vincoli: ValutatoreMultiplo,
     ):
-        super().__init__(n_var=nValutazioni, n_obj=valutatore.numIndici, xl=0.0, xu=1.0)
+        nVincoli = vincoli.numIndici if vincoli is not None else 0
 
+        super().__init__(n_var=nValutazioni, n_constr=nVincoli, n_obj=valutatore.numIndici, xl=0.0, xu=1.0)
+
+        self.vincoli = vincoli
         self.statsStoriche = statsStoriche
         self.valutatore = valutatore
 
     def _evaluate(self, X, out, *args, **kwargs):
-        out["F"] = self.valutatore.calcola(X, self.statsStoriche, inverti=True)
+        out["F"] = self.valutatore.calcola(X, self.statsStoriche)
+
+        if self.vincoli is not None:
+            out["G"] = self.vincoli.calcola(X, self.statsStoriche)
+        else:
+            out["G"] = np.zeros((X.shape[0], self.n_constr))
 
 
 class EarlyStoppingCallback(Callback):
@@ -83,46 +92,51 @@ class EarlyStoppingCallback(Callback):
         self._hv_indicator = None
 
     def notify(self, algorithm):
-        """
-        Chiamato ad ogni generazione dall'algoritmo.
-        """
         self.generation += 1
 
         if algorithm.pop is not None and len(algorithm.pop) > 0:
+            cv = algorithm.pop.get("CV")
             F = algorithm.pop.get("F")
-            if F is not None and len(F) > 0:
-                F = np.asarray(F, dtype=np.float64)
-                if self.ref_point is None:
-                    max_f = np.max(F, axis=0)
-                    self.ref_point = max_f + 0.1 * np.maximum(np.abs(max_f), 1.0)
-                    self._hv_indicator = HV(ref_point=self.ref_point)
-                elif self._hv_indicator is None:
-                    self._hv_indicator = HV(ref_point=self.ref_point)
 
-                current_hv = float(self._hv_indicator(F))
+            # Considera solo individui che soddisfano G <= 0
+            if cv is not None:
+                feasible = np.all(cv <= 1e-6, axis=1)
+                F = F[feasible]
 
-                if self.best_hv is None:
+            # Se non c'è ancora nessun portafoglio ammissibile, attendi le prossime generazioni
+            if F is None or len(F) == 0:
+                if self.verbose and self.generation % 10 == 0:
+                    print(f"Gen {self.generation}: Popolazione ancora inammissibile...")
+                return
+
+            F = np.asarray(F, dtype=np.float64)
+
+            if self.ref_point is None:
+                max_f = np.max(F, axis=0)
+                self.ref_point = max_f + 0.1 * np.maximum(np.abs(max_f), 1.0)
+                self._hv_indicator = HV(ref_point=self.ref_point)
+            elif self._hv_indicator is None:
+                self._hv_indicator = HV(ref_point=self.ref_point)
+
+            current_hv = float(self._hv_indicator(F))
+
+            if self.best_hv is None:
+                self.best_hv = current_hv
+                if self.verbose:
+                    print(f"Gen {self.generation}: Prima popolazione valida! HV = {current_hv:.6f}")
+            else:
+                improvement = current_hv - self.best_hv
+                if improvement > self.min_improvement:
                     self.best_hv = current_hv
+                    self.counter = 0
                     if self.verbose:
-                        print(f"Gen {self.generation}: Baseline HV = {current_hv:.6f}")
+                        print(f"Gen {self.generation}: Miglioramento HV {improvement:.6f}, hv = {current_hv:.6f}")
                 else:
-                    improvement = current_hv - self.best_hv  # Positivo se miglioramento
+                    self.counter += 1
+                    if self.verbose and self.counter % 10 == 0:
+                        print(f"Gen {self.generation}: Nessun miglioramento per {self.counter} gen")
 
-                    if improvement > self.min_improvement:
-                        # C'è stato un miglioramento significativo
-                        self.best_hv = current_hv
-                        self.counter = 0
+                    if self.counter >= self.patience:
                         if self.verbose:
-                            print(f"Gen {self.generation}: Miglioramento HV {improvement:.6f}, hv = {current_hv:.6f}")
-                    else:
-                        # Nessun miglioramento significativo
-                        self.counter += 1
-                        if self.verbose and self.counter % 10 == 0:
-                            print(f"Gen {self.generation}: No improvement for {self.counter} gens")
-
-                        if self.counter >= self.patience:
-                            if self.verbose:
-                                print(f"\nEarly stopping at generation {self.generation}")
-                                print(f"No improvement for {self.patience} generations")
-                            algorithm.termination.force_termination = True
-                            return
+                            print(f"\nEarly stopping alla generazione {self.generation}")
+                        algorithm.termination.force_termination = True

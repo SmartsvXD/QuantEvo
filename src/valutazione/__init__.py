@@ -3,15 +3,15 @@ import numpy as np
 
 class ValutatoreMultiplo:
     def __init__(self, indici: tuple):
-        self._indici = indici
-        self.numIndici = len(self._indici)
+        self.indici = indici
+        self.numIndici = len(self.indici)
 
-    def calcola(self, portafoglio, stats, inverti=True):
+    def calcola(self, portafoglio, stats, valoreOriginale=False):
         portafoglio = np.atleast_2d(portafoglio)
 
-        res = np.empty((portafoglio.shape[0], len(self._indici)), dtype=np.float64)
-        for n, i in enumerate(self._indici):
-            vals = i.calcola(portafoglio, stats, inverti=inverti)
+        res = np.empty((portafoglio.shape[0], len(self.indici)), dtype=np.float64)
+        for n, i in enumerate(self.indici):
+            vals = i.calcola(portafoglio, stats, valoreOriginale=valoreOriginale)
             res[:, n] = vals
 
         return res

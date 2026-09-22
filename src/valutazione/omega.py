@@ -1,8 +1,7 @@
 import numpy as np
 from numba import njit, prange
 
-from src.const import GIORNI_IN_UN_ANNO, MIN_OMEGA_VALUE
-from src.valutazione.cagr import CAGRIndice
+from src.const import DEFAULT_RISK_FREE_RATE
 from src.valutazione.indice import Indice
 
 
@@ -15,28 +14,33 @@ def _omegaNumba(portafoglio: np.ndarray, samples_3d: np.ndarray, soglia: float) 
     for i in prange(n_port):
         asset_values = np.empty(n_asset, dtype=np.float64)
         for b in range(n_boot):
-            v_prev = 0.0
+            v_start_month = 0.0
             for a in range(n_asset):
                 val = portafoglio[i, a]
                 asset_values[a] = val
-                v_prev += val
+                v_start_month += val
 
             up = 0.0
             down = 0.0
+            day_counter = 0
+
             for t in range(n_samples):
                 v_curr = 0.0
                 for a in range(n_asset):
                     asset_values[a] *= 1.0 + samples_3d[b, a, t]
                     v_curr += asset_values[a]
 
-                ret = (v_curr - v_prev) / v_prev if abs(v_prev) > 1e-12 else 0.0
-                v_prev = v_curr
+                day_counter += 1
+                if day_counter == 12:
+                    ret_mese = (v_curr - v_start_month) / v_start_month if abs(v_start_month) > 1e-12 else 0.0
+                    v_start_month = v_curr
+                    day_counter = 0
 
-                diff = ret - soglia
-                if diff > 0.0:
-                    up += diff
-                else:
-                    down -= diff
+                    diff = ret_mese - soglia
+                    if diff > 0.0:
+                        up += diff
+                    else:
+                        down -= diff
 
             if down < 1e-12:
                 omega_vals[i, b] = 10.0 if up > 0.0 else 1.0
@@ -48,25 +52,13 @@ def _omegaNumba(portafoglio: np.ndarray, samples_3d: np.ndarray, soglia: float) 
 
 
 class OmegaIndice(Indice):
-    def __init__(
-        self,
-        sogliaAnnua=0.035,
-        metricaRischio="cvar",
-        alpha=0.05,
-        lambdaPenalitaStabilita=0.4,
-        inverti=True,
-    ):
-        super().__init__(
-            metricaRischio=metricaRischio,
-            alpha=alpha,
-            lambdaPenalitaStabilita=lambdaPenalitaStabilita,
-            inverti=inverti,
-        )
+    def __init__(self, sogliaAnnua=DEFAULT_RISK_FREE_RATE, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         if sogliaAnnua <= -1.0:
             raise ValueError("sogliaAnnua deve essere strettamente maggiore di -1.0 (-100%).")
 
-        self._sogliaGiornaliera = (1.0 + sogliaAnnua) ** (1.0 / GIORNI_IN_UN_ANNO) - 1.0
+        self._sogliaGiornaliera = (1.0 + sogliaAnnua) ** (1.0 / 12) - 1.0
 
     def _calcola(self, portafoglio: np.ndarray, stats: dict):
         p = np.atleast_2d(portafoglio)

@@ -6,14 +6,11 @@ from src.managerTitoli import StatsTitoli
 from src.utils.repair import PortfolioConstraints
 from src.valutazione import ValutatoreMultiplo
 from src.valutazione.cagr import CAGRIndice
-from src.valutazione.diversificazione import DiversificazioneIndice
+from src.valutazione.enb import ENBIndice
+from src.valutazione.enc import ENCIndice
+from src.valutazione.maxDrawdown import MaxDrawdownIndice
 from src.valutazione.omega import OmegaIndice
-from src.valutazione.rischio import (
-    RischioTotaleCorrettoIndice,
-    RischioTailCVarIndice,
-    RischioMaxDrawdownIndice,
-    RischioTotaleIndice,
-)
+from src.valutazione.tailCVar import TailCVarIndice
 
 if __name__ == "__main__":
     with open("titoli.json", "r") as file:
@@ -27,17 +24,34 @@ if __name__ == "__main__":
     s = StatsTitoli(titoli, forzaDownload=0, verbose=1)
     s.preparaBootstrap()
 
-    vincoli = PortfolioConstraints(percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3)
+    constraints = PortfolioConstraints(percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3)
 
-    omega = CAGRIndice(inverti=True)
-    rischio = RischioMaxDrawdownIndice()
+    cagr = CAGRIndice(daMassimizzare=True)
+    maxdrawdown = MaxDrawdownIndice()
+    cvar = TailCVarIndice()
 
-    v = ValutatoreMultiplo((omega, rischio))
+    v = ValutatoreMultiplo((cagr, maxdrawdown, cvar))
+    vincoli = ValutatoreMultiplo(
+        (
+            OmegaIndice(daMassimizzare=True, soglia=1.25, sogliaAnnua=0.035, metricaRischio="percentile", alpha=0.5),
+            ENCIndice(daMassimizzare=True, soglia=0.7, metricaRischio="percentile", alpha=0.5),
+            ENBIndice(daMassimizzare=True, soglia=1.6, metricaRischio="percentile", alpha=0.5),
+        )
+    )
 
-    port, ris = run(s, v, vincoli, seeds=None)
+    port, ris = run(s, v, constraints, vincoli=vincoli, seeds=None)
 
-    print("\n")
-    for i in range(len(titoli)):
-        print(f"{titoli[i]}: {port[i]:.1%}")
+    if len(port) == 0:
+        print("Nessun portafoglio valido trovato.")
+    else:
+        print("\n")
+        for i in range(len(titoli)):
+            print(f"{titoli[i]}: {port[i]:.1%}")
 
-    print(f"\n{v.calcola(port[0], s)}")
+        print()
+        for i in v.indici:
+            print(f"{i.__class__.__name__}: {i.calcola(port, s, valoreOriginale=True, faiBootstrap=False):.4f}")
+
+        print()
+        for i in vincoli.indici:
+            print(f"{i.__class__.__name__}: {i.calcola(port, s, valoreOriginale=True, faiBootstrap=False):.4f}")
