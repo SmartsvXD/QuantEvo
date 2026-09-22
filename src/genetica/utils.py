@@ -1,10 +1,40 @@
 import numpy as np
-
-from src.const import DEFAULT_PESI_VALUTAZIONE
 from src.utils.vincoli import Vincoli
 
 
-# Funzione per ordinare valutazioni e pesi rispetto alla media delle valutazioni
+def trova_knee_point(F: np.ndarray) -> int:
+    n_points, n_obj = F.shape
+    if n_points <= n_obj:
+        return 0
+
+    f_min = np.min(F, axis=0)
+    f_max = np.max(F, axis=0)
+    delta = f_max - f_min
+    delta[delta == 0] = 1.0
+    F_norm = (F - f_min) / delta
+
+    if n_obj == 3:
+        # Trova i 3 vertici estremi (migliori per ciascun singolo asse)
+        p1 = F_norm[np.argmin(F_norm[:, 0])]
+        p2 = F_norm[np.argmin(F_norm[:, 1])]
+        p3 = F_norm[np.argmin(F_norm[:, 2])]
+
+        # Vettore normale al piano passante per p1, p2, p3
+        v1 = p2 - p1
+        v2 = p3 - p1
+        normale = np.cross(v1, v2)
+        norm_len = np.linalg.norm(normale)
+
+        if norm_len > 1e-8:
+            normale = normale / norm_len
+            # Distanza perpendicolare di ogni punto dal piano
+            distanze = np.abs(np.dot(F_norm - p1, normale))
+            return int(np.argmax(distanze))
+
+    # Fallback TOPSIS (distanza minima dall'ideale [0, 0, ...])
+    return int(np.argmin(np.linalg.norm(F_norm, axis=1)))
+
+
 def ordina(F, X, vincoli: Vincoli, sum_tol=1e-8, zero_tol=1e-12):
     if vincoli.upper is None:
         n = X.shape[1]
@@ -35,7 +65,6 @@ def ordina(F, X, vincoli: Vincoli, sum_tol=1e-8, zero_tol=1e-12):
             continue
 
         # 4. Pesi semi-continui: ammessi solo ~0 oppure >= (pct_min - tol)
-        # Se un peso è > zero_tol ma < pct_min - zero_tol, è invalido
         mask_invalido = (row > zero_tol) & (row < pct_min - zero_tol)
         if np.any(mask_invalido):
             invalid.append(i)
@@ -53,13 +82,9 @@ def ordina(F, X, vincoli: Vincoli, sum_tol=1e-8, zero_tol=1e-12):
         X = np.delete(X, invalid, axis=0)
         F = np.delete(F, invalid, axis=0)
 
-    w = np.array(DEFAULT_PESI_VALUTAZIONE, dtype=np.float64)
     if F.size == 0:
-        return F, X
+        return None, None
 
-    n_obj = F.shape[1]
-    if w.size != n_obj:
-        w = np.ones(n_obj, dtype=np.float64) / n_obj
+    knee_idx = trova_knee_point(F)
 
-    indici = np.argsort(np.sum(F * w, axis=1))
-    return F[indici], X[indici]
+    return F[knee_idx], X[knee_idx]

@@ -50,16 +50,14 @@ class ProblemaPortafoglio(Problem):
         statsStoriche: StatsTitoli,
         nValutazioni,
         valutatore: ValutatoreMultiplo,
-        standardizzato=True,
     ):
         super().__init__(n_var=nValutazioni, n_obj=valutatore.numIndici, xl=0.0, xu=1.0)
 
         self.statsStoriche = statsStoriche
         self.valutatore = valutatore
-        self.standardizzato = standardizzato
 
     def _evaluate(self, X, out, *args, **kwargs):
-        out["F"] = self.valutatore.calcola(X, self.statsStoriche, standardizza=self.standardizzato, inverti=True)
+        out["F"] = self.valutatore.calcola(X, self.statsStoriche, inverti=True)
 
 
 class EarlyStoppingCallback(Callback):

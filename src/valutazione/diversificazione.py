@@ -15,27 +15,32 @@ def penaltyCardinalita(
     pesi: np.ndarray,
     minTitoli: int = 3,
     epsilon: float = 0.01,
-    maxTitoli: int = -1,
 ) -> np.ndarray:
     n_rows, n_cols = pesi.shape
     res = np.zeros(n_rows, dtype=np.float64)
 
     inv_min = 1.0 / minTitoli
-    inv_max = 1.0 / maxTitoli if maxTitoli > 0 else 0.0
 
     for i in range(n_rows):
-        # Conteggio inline senza allocare matrici booleane
-        count = 0
+        # Calcolo HHI per ottenere la cardinalità effettiva (ENC)
+        hhi = 0.0
+        count_nominale = 0
         for j in range(n_cols):
-            if pesi[i, j] > epsilon:
-                count += 1
+            w = pesi[i, j]
+            hhi += w * w
+            if w > epsilon:
+                count_nominale += 1
+
+        enc = 1.0 / hhi if hhi > 1e-12 else 1.0
 
         pen = 0.0
-        if count < minTitoli:
-            pen += (minTitoli - count) * inv_min
+        # Penalizza se la diversificazione effettiva è sotto la soglia minima
+        if enc < minTitoli:
+            pen += (minTitoli - enc) * inv_min
 
-        if maxTitoli > 0 and count > maxTitoli:
-            pen += (count - maxTitoli) * inv_max
+        # Mantieni la penalità se anche nominalmente mancano titoli
+        if count_nominale < minTitoli:
+            pen += (minTitoli - count_nominale) * inv_min
 
         res[i] = pen
 
@@ -69,7 +74,6 @@ class DiversificazioneIndice(Indice):
 
     def _calcola(self, portafoglio: np.ndarray, stats: dict) -> np.ndarray:
         p = np.atleast_2d(portafoglio)
-        # tensori["corr"] ha forma (B, N, N) sia con B=1 che con B>1
         quadCorr = np.einsum("pi,bij,pj->pb", p, stats["corr"], p)
         quadCorr = np.maximum(quadCorr, 1e-12)
 
@@ -86,4 +90,6 @@ class DiversificazioneIndice(Indice):
             p, minTitoli=self.cardMinTitoli, maxTitoli=self.cardMaxTitoli, epsilon=self.cardEpsilon
         )[:, None]
 
-        return (1.0 - enb_norm) + hhi_norm + self.pesoCard * pen  # Shape sempre (P, B)
+        div_score = 0.5 * (enb_norm + (1.0 - hhi_norm))
+
+        return div_score - self.pesoCard * pen

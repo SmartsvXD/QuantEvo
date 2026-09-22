@@ -12,21 +12,10 @@ class Indice:
         lambdaPenalitaStabilita=0.4,
         inverti=False,
     ):
-        self.puoStandardizzare = False
         self.inverti = inverti
         self.metricaRischio = metricaRischio
         self.alpha = alpha
         self.lambdaPenalitaStabilita = lambdaPenalitaStabilita
-
-    def fitStandardizza(self, listaPortafogli, stats):
-        # Il fit usa il calcolo semplice (B=1) per velocità
-        valori = self.calcola(listaPortafogli, stats, faiBootstrap=False, standardizza=False, inverti=False)
-
-        self._mu = np.mean(valori)
-        self._sigma = np.std(valori)
-        self._sigma = max(self._sigma, 1e-6)
-
-        self.puoStandardizzare = True
 
     def _aggregaValori(self, vals: np.ndarray):
         if self.metricaRischio == "cvar":
@@ -54,7 +43,6 @@ class Indice:
         portafoglio,
         stats,
         faiBootstrap=True,
-        standardizza=True,
         inverti=True,
         debug=False,
         *args,
@@ -80,9 +68,6 @@ class Indice:
 
         if debug and faiBootstrap:
             print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
-
-        if standardizza:
-            data = (data - self._mu) / self._sigma
 
         if self.inverti and inverti:
             data = -data

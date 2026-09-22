@@ -2,6 +2,7 @@ import numpy as np
 from numba import njit, prange
 
 from src.const import GIORNI_IN_UN_ANNO, MIN_OMEGA_VALUE
+from src.valutazione.cagr import CAGRIndice
 from src.valutazione.indice import Indice
 
 
@@ -37,7 +38,11 @@ def _omegaNumba(portafoglio: np.ndarray, samples_3d: np.ndarray, soglia: float) 
                 else:
                     down -= diff
 
-            omega_vals[i, b] = (1e12 if up > 0.0 else 0.0) if down < 1e-12 else up / down
+            if down < 1e-12:
+                omega_vals[i, b] = 10.0 if up > 0.0 else 1.0
+            else:
+                val = up / down
+                omega_vals[i, b] = min(val, 10.0)
 
     return omega_vals
 
@@ -45,7 +50,7 @@ def _omegaNumba(portafoglio: np.ndarray, samples_3d: np.ndarray, soglia: float) 
 class OmegaIndice(Indice):
     def __init__(
         self,
-        sogliaAnnua=0.0,
+        sogliaAnnua=0.035,
         metricaRischio="cvar",
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
@@ -71,12 +76,15 @@ class OmegaIndice(Indice):
 class CAGROmegaIndice(Indice):
     def __init__(
         self,
-        sogliaAnnua=0.0,
+        sogliaAnnua=0.035,
+        minOmegaValue=MIN_OMEGA_VALUE,
         metricaRischio="cvar",
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
         inverti=True,
     ):
+        self.minOmegaValue = minOmegaValue
+
         super().__init__(
             metricaRischio=metricaRischio,
             alpha=alpha,
@@ -92,20 +100,19 @@ class CAGROmegaIndice(Indice):
             inverti=False,
         )
 
+        self.cagrIndice = CAGRIndice(
+            metricaRischio=metricaRischio,
+            alpha=alpha,
+            lambdaPenalitaStabilita=lambdaPenalitaStabilita,
+            inverti=False,
+        )
+
     def _calcola(self, portafoglio: np.ndarray, tensori: dict):
         p = np.atleast_2d(portafoglio)
         omega = self.omegaIndice._calcola(p, tensori)
+        cagr = self.cagrIndice._calcola(p, tensori)
 
-        rend_boot = tensori["rendimenti"]
-        rend_clipped = np.clip(rend_boot, -0.999999, None)
-        montante_asset = np.exp(np.sum(np.log1p(rend_clipped), axis=2))  # Shape: (B, N)
-        valore_finale = np.einsum("pi,bi->pb", p, montante_asset)        # Shape: (P, B)
-
-        esponente = GIORNI_IN_UN_ANNO / rend_boot.shape[2]
-        cagr = np.where(valore_finale > 0.0, valore_finale**esponente - 1.0, -1.0)
-        cagr = np.where(np.isnan(cagr), 0.0, cagr)
-
-        omega_diff = omega - MIN_OMEGA_VALUE
+        omega_diff = omega - self.minOmegaValue
         valido = (cagr > 0.0) & (omega_diff > 0.0)
         p_valido = cagr * omega_diff
 

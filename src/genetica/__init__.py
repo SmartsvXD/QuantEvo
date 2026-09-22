@@ -19,7 +19,7 @@ def run(
     statsStoriche: StatsTitoli,
     valutatore: ValutatoreMultiplo,
     vincoli: Vincoli,
-    popSize=100,
+    popSize=200,
     nGen=500,
     seeds=None,
     faiEarlyStopping=True,
@@ -52,7 +52,7 @@ def run(
             pop_size=popSize,  # Corretto da popSize a pop_size
             sampling=sampling,
             crossover=SBX(prob=0.9, eta=20),
-            mutation=PM(prob=0.15, eta=25),
+            mutation=PM(prob=1.0/nValutazioni, eta=25),
             repair=repair,
         )
 

@@ -1,8 +1,7 @@
 import numpy as np
 from numba import njit, prange
 
-from src.const import DEFAULT_PESO_CVAR, DEFAULT_PESO_MD
-from src.valutazione.indice import Indice
+from src.const import DEFAULT_PESO_CVAR, DEFAULT_PESO_MD, GIORNI_IN_UN_ANNO
 from src.valutazione.indice import Indice
 
 
@@ -49,7 +48,7 @@ def volatilitaPortafoglio(R: np.ndarray) -> np.ndarray:
 
         out[i] = np.sqrt(var / (n_t - 1)) if n_t > 1 else 0.0
 
-    return out
+    return out * np.sqrt(GIORNI_IN_UN_ANNO)
 
 
 @njit(fastmath=True, parallel=True)
@@ -88,12 +87,10 @@ def rischioTailCVar(R: np.ndarray, alpha: float = 0.05) -> np.ndarray:
     k_tail = max(1, int(n_t * alpha))
 
     for i in prange(n_p):
-        # np.partition sposta i k_tail elementi più piccoli all'inizio in O(N)
-        # Evita l'ordinamento completo O(N log N) di row.sort()
         part = np.partition(R[i], k_tail)
         out[i] = np.mean(part[:k_tail])
 
-    return out
+    return out * np.sqrt(GIORNI_IN_UN_ANNO)
 
 
 class RischioTotaleIndice(Indice):
@@ -157,12 +154,6 @@ class RischioTotaleCorrettoIndice(Indice):
         self.rischioTotale = RischioTotaleIndice()
         self.rischioMD = RischioMaxDrawdownIndice()
         self.rischioCVar = RischioTailCVarIndice(alpha=alphaCVar)
-
-    def fitStandardizza(self, portafogli, stats):
-        self.rischioMD.fitStandardizza(portafogli, stats)
-        self.rischioCVar.fitStandardizza(portafogli, stats)
-        self.rischioTotale.fitStandardizza(portafogli, stats)
-        super().fitStandardizza(portafogli, stats)
 
     def _calcola(self, portafoglio: np.ndarray, tensori: dict):
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
