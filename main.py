@@ -3,12 +3,17 @@ import json
 from src.const import PERCENTUALE_MINIMA_TITOLO
 from src.genetica import run
 from src.managerTitoli import StatsTitoli
-from src.utils.vincoli import Vincoli
+from src.utils.repair import PortfolioConstraints
 from src.valutazione import ValutatoreMultiplo
 from src.valutazione.cagr import CAGRIndice
 from src.valutazione.diversificazione import DiversificazioneIndice
-from src.valutazione.omega import CAGROmegaIndice, OmegaIndice
-from src.valutazione.rischio import RischioTotaleCorrettoIndice, RischioTailCVarIndice, RischioMaxDrawdownIndice, RischioTotaleIndice
+from src.valutazione.omega import OmegaIndice
+from src.valutazione.rischio import (
+    RischioTotaleCorrettoIndice,
+    RischioTailCVarIndice,
+    RischioMaxDrawdownIndice,
+    RischioTotaleIndice,
+)
 
 if __name__ == "__main__":
     with open("titoli.json", "r") as file:
@@ -22,7 +27,7 @@ if __name__ == "__main__":
     s = StatsTitoli(titoli, forzaDownload=0, verbose=1)
     s.preparaBootstrap()
 
-    vincoli = Vincoli(percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3)
+    vincoli = PortfolioConstraints(percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3)
 
     omega = CAGRIndice(inverti=True)
     rischio = RischioMaxDrawdownIndice()

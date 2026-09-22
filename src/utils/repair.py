@@ -25,8 +25,7 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
     # 3. Determinazione cardinalità attiva k
     k_target = min_titoli
     max_active = int(1.0 / pct_min) if pct_min > 0.0 else n_elig
-    if max_active > n_elig:
-        max_active = n_elig
+    max_active = min(max_active, n_elig)
 
     n_natural = 0
     for j in range(n_elig):
@@ -132,7 +131,7 @@ def _proietta_riga(w, pct_min, upper_arr, min_titoli):
 
 
 @njit(fastmath=True)
-def _applica_vincoli_jit(pesi, percentualeMinima, upper, minTitoli):
+def _apply_constraints_jit(pesi, percentualeMinima, upper, minTitoli):
     if pesi.ndim == 1:
         _proietta_riga(pesi, percentualeMinima, upper, minTitoli)
     else:
@@ -141,7 +140,7 @@ def _applica_vincoli_jit(pesi, percentualeMinima, upper, minTitoli):
     return pesi
 
 
-def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
+def applyConstraints(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
     """Valida i vincoli di portafoglio e delega la proiezione al kernel compilato."""
     if not isinstance(pesi, np.ndarray):
         pesi = np.asarray(pesi, dtype=np.float64)
@@ -187,26 +186,24 @@ def applicaVincoli(pesi, percentualeMinima=0.05, upper=None, minTitoli=3):
 
     somma_upper_elig = np.sum(upper[eleggibili])
     if somma_upper_elig < 1.0 - 1e-12:
-        raise ValueError(
-            f"Problema non fattibile: somma degli upper bound eleggibili ({somma_upper_elig:.4f}) < 1.0"
-        )
+        raise ValueError(f"Problema non fattibile: somma degli upper bound eleggibili ({somma_upper_elig:.4f}) < 1.0")
 
     if not pesi.flags.c_contiguous:
         pesi = np.ascontiguousarray(pesi)
     if not upper.flags.c_contiguous:
         upper = np.ascontiguousarray(upper)
 
-    return _applica_vincoli_jit(pesi, float(percentualeMinima), upper, int(minTitoli))
+    return _apply_constraints_jit(pesi, float(percentualeMinima), upper, int(minTitoli))
 
 
-class Vincoli:
+class PortfolioConstraints:
     def __init__(self, percentualeMinima=0.05, upper=None, minTitoli=3):
         self.percentualeMinima = percentualeMinima
         self.upper = np.asarray(upper, dtype=np.float64) if upper is not None else None
         self.minTitoli = minTitoli
 
     def applica(self, portafogli):
-        return applicaVincoli(
+        return applyConstraints(
             portafogli,
             percentualeMinima=self.percentualeMinima,
             upper=self.upper,

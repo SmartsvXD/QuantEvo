@@ -1,5 +1,5 @@
 import numpy as np
-from src.utils.vincoli import Vincoli
+from src.utils.repair import PortfolioConstraints
 
 
 def trova_knee_point(F: np.ndarray) -> int:
@@ -35,7 +35,7 @@ def trova_knee_point(F: np.ndarray) -> int:
     return int(np.argmin(np.linalg.norm(F_norm, axis=1)))
 
 
-def ordina(F, X, vincoli: Vincoli, sum_tol=1e-8, zero_tol=1e-12):
+def ordina(F, X, vincoli: PortfolioConstraints, sum_tol=1e-8, zero_tol=1e-12):
     if vincoli.upper is None:
         n = X.shape[1]
         upper = np.ones(n)

@@ -11,14 +11,14 @@ from pymoo.termination import get_termination
 from src.genetica.pymoo import EarlyStoppingCallback, PortfolioRepair, ProblemaPortafoglio, ValidPortfolioSampling
 from src.genetica.utils import ordina
 from src.managerTitoli import StatsTitoli
-from src.utils.vincoli import Vincoli
+from src.utils.repair import PortfolioConstraints
 from src.valutazione import ValutatoreMultiplo
 
 
 def run(
     statsStoriche: StatsTitoli,
     valutatore: ValutatoreMultiplo,
-    vincoli: Vincoli,
+    vincoli: PortfolioConstraints,
     popSize=200,
     nGen=500,
     seeds=None,
@@ -43,16 +43,14 @@ def run(
 
         problem = ProblemaPortafoglio(statsStoriche, nValutazioni, valutatore=valutatore)
 
-        sampling = ValidPortfolioSampling(
-            nValutazioni, vincoli=vincoli
-        )
+        sampling = ValidPortfolioSampling(nValutazioni, vincoli=vincoli)
         repair = PortfolioRepair(vincoli=vincoli)
 
         algorithm = NSGA2(
-            pop_size=popSize,  # Corretto da popSize a pop_size
+            pop_size=popSize,  
             sampling=sampling,
             crossover=SBX(prob=0.9, eta=20),
-            mutation=PM(prob=1.0/nValutazioni, eta=25),
+            mutation=PM(prob=1.0 / nValutazioni, eta=25),
             repair=repair,
         )
 

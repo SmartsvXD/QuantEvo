@@ -6,12 +6,12 @@ from pymoo.core.sampling import Sampling
 from pymoo.indicators.hv import HV
 
 from src.managerTitoli import StatsTitoli
-from src.utils.vincoli import Vincoli
+from src.utils.repair import PortfolioConstraints
 from src.valutazione import ValutatoreMultiplo
 
 
 class ValidPortfolioSampling(Sampling):
-    def __init__(self, nValutazioni, vincoli: Vincoli):
+    def __init__(self, nValutazioni, vincoli: PortfolioConstraints):
         super().__init__()
         self.nValutazioni = nValutazioni
         self.vincoli = vincoli
@@ -29,7 +29,7 @@ class ValidPortfolioSampling(Sampling):
 
 
 class PortfolioRepair(Repair):
-    def __init__(self, vincoli: Vincoli):
+    def __init__(self, vincoli: PortfolioConstraints):
         super().__init__()
         self.vincoli = vincoli
 
