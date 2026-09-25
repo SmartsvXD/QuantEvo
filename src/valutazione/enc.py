@@ -5,14 +5,9 @@ from src.valutazione.indice import Indice
 
 
 @njit(fastmath=True)
-def _calcola_enc_kernel(
-    pesi: np.ndarray,
-) -> np.ndarray:
+def _calcola_enc_kernel(pesi: np.ndarray) -> np.ndarray:
     n_p, n_assets = pesi.shape
     res = np.zeros((n_p, 1), dtype=np.float64)
-
-    inv_assets = 1.0 / n_assets if n_assets > 0 else 1.0
-    hhi_den = 1.0 - inv_assets
 
     for i in range(n_p):
         hhi = 0.0
@@ -20,19 +15,11 @@ def _calcola_enc_kernel(
             w = pesi[i, j]
             hhi += w * w
 
-        # Normalizzazione HHI in [0, 1]
-        if n_assets > 1 and hhi_den > 1e-12:
-            hhi_norm = (hhi - inv_assets) / hhi_den
-            if hhi_norm < 0.0:
-                hhi_norm = 0.0
-            elif hhi_norm > 1.0:
-                hhi_norm = 1.0
+        # ENC classico: inverso dell'HHI
+        if hhi > 1e-12:
+            res[i, 0] = 1.0 / hhi
         else:
-            hhi_norm = 1.0
-
-        enc_score = 1.0 - hhi_norm
-
-        res[i, 0] = enc_score
+            res[i, 0] = 0.0
 
     return res
 

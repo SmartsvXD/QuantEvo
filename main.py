@@ -17,14 +17,14 @@ if __name__ == "__main__":
         data = json.load(file)
 
     titoli = [x[0] for x in data]
-    # Al momento non utilizziamo upper, ma lo lasciamo per eventuali sviluppi futuri
-    # Voglio verificare come si comporta l'algoritmo senza un vincolo di upper, quindi lo imposto a None per ora
     upper = [x[1] for x in data]
 
     s = StatsTitoli(titoli, forzaDownload=0, verbose=1)
     s.preparaBootstrap()
 
-    constraints = PortfolioConstraints(percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3, maxTitoli=6)
+    constraints = PortfolioConstraints(
+        percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3, maxTitoli=6
+    )
 
     cagr = CAGRIndice()
     # rischio = MaxDrawdownIndice()
@@ -34,8 +34,8 @@ if __name__ == "__main__":
     vincoli = ValutatoreMultiplo(
         (
             OmegaIndice(soglia=1.25, sogliaAnnua=0.035, metricaRischio="percentile", alpha=0.5),
-            ENCIndice(soglia=0.6, metricaRischio="percentile", alpha=0.5),
-            ENBIndice(soglia=1.3, metricaRischio="percentile", alpha=0.5),
+            ENCIndice(soglia=3.8, metricaRischio="percentile", alpha=0.5),
+            ENBIndice(soglia=1.2, metricaRischio="percentile", alpha=0.5),
         )
     )
 

@@ -1,7 +1,6 @@
 import numpy as np
 from numba import njit, prange
 
-from src.const import GIORNI_IN_UN_ANNO
 from src.valutazione.indice import Indice
 from src.valutazione.utils import calcolaPortReturns
 
@@ -16,12 +15,16 @@ def rischioTailCVar(R: np.ndarray, alpha: float = 0.05) -> np.ndarray:
         part = np.partition(R[i], k_tail)
         out[i] = np.mean(part[:k_tail])
 
-    return out * np.sqrt(GIORNI_IN_UN_ANNO)
+    return out
 
 
 class TailCVarIndice(Indice):
     def __init__(self, alpha=0.05, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        if alpha <= 0.0 or alpha >= 1.0:
+            raise ValueError("Il parametro alpha deve essere compreso tra 0 e 1 (esclusi).")
+        
         self.alpha = alpha
 
     def _calcola(self, portafoglio: np.ndarray, tensori: dict, portReturns=None):

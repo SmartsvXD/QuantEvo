@@ -10,17 +10,43 @@ def _calcola_enb_kernel(pesi: np.ndarray, corr: np.ndarray) -> np.ndarray:
     n_b = corr.shape[0]
     res = np.zeros((n_p, n_b), dtype=np.float64)
 
-    for p in range(n_p):
-        for b in range(n_b):
-            quad = 0.0
-            for i in range(n_assets):
-                w_i = pesi[p, i]
-                if w_i == 0.0:
-                    continue
-                for j in range(n_assets):
-                    quad += w_i * corr[b, i, j] * pesi[p, j]
+    # Buffer riutilizzabile per i contributi di rischio delle scommesse
+    c = np.zeros(n_assets, dtype=np.float64)
 
-            res[p, b] = 1.0 / quad if quad > 1e-12 else 1.0
+    for b in range(n_b):
+        # Autovalori (vals) e autovettori ortonormali (vecs)
+        vals, vecs = np.linalg.eigh(corr[b])
+
+        # Clamping per evitare piccoli autovalori negativi dovuti a errori numerici
+        for i in range(n_assets):
+            vals[i] = max(vals[i], 0.0)
+
+        for p in range(n_p):
+            total_var = 0.0
+
+            # Proiezione del portafoglio sulle componenti ortogonali (bets)
+            for k in range(n_assets):
+                proj_k = 0.0
+                for i in range(n_assets):
+                    w_i = pesi[p, i]
+                    if w_i != 0.0:
+                        proj_k += w_i * vecs[i, k]
+
+                # Varianza della scommessa k-esima
+                var_k = vals[k] * proj_k * proj_k
+                c[k] = var_k
+                total_var += var_k
+
+            # Entropia esponenziale di Shannon dei contributi percentuali p_k
+            if total_var > 1e-12:
+                entropy = 0.0
+                for k in range(n_assets):
+                    p_k = c[k] / total_var
+                    if p_k > 1e-12:
+                        entropy -= p_k * np.log(p_k)
+                res[p, b] = np.exp(entropy)
+            else:
+                res[p, b] = 1.0
 
     return res
 

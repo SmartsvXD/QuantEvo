@@ -1,7 +1,7 @@
 import numpy as np
 from numba import njit, prange
 
-from src.const import DEFAULT_RISK_FREE_RATE
+from src.const import DEFAULT_RISK_FREE_RATE, GIORNI_IN_UN_ANNO
 from src.valutazione.indice import Indice
 
 
@@ -31,7 +31,7 @@ def _omegaNumba(portafoglio: np.ndarray, samples_3d: np.ndarray, soglia: float) 
                     v_curr += asset_values[a]
 
                 day_counter += 1
-                if day_counter == 12:
+                if day_counter == GIORNI_IN_UN_ANNO // 12:
                     ret_mese = (v_curr - v_start_month) / v_start_month if abs(v_start_month) > 1e-12 else 0.0
                     v_start_month = v_curr
                     day_counter = 0

@@ -5,9 +5,7 @@ from src.valutazione.indice import Indice
 
 
 class CAGRIndice(Indice):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.daMassimizzare = True
+    DA_MASSIMIZZARE = True
     
     def _calcola(self, portafoglio: np.ndarray, tensori: dict):
         p = np.atleast_2d(portafoglio)

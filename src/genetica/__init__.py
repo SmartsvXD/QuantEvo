@@ -73,9 +73,9 @@ def run(
         res = minimize(problem, algorithm, termination, seed=seed_int, verbose=bool(verbose), callback=callback)
 
         if res.X is not None and len(res.X) > 0:
-            if res.CV is None:
-                cv_ottimi = np.atleast_2d(res.CV)
-                ammissibili = np.all(cv_ottimi <= 1e-6, axis=1)
+            if res.CV is not None:
+                cv = np.asarray(res.CV).reshape(len(res.X), -1)
+                ammissibili = np.all(cv <= 1e-6, axis=1)
             else:
                 ammissibili = np.ones(len(res.X), dtype=bool)
 
