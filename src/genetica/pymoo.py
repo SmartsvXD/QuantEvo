@@ -5,8 +5,8 @@ from pymoo.core.repair import Repair
 from pymoo.core.sampling import Sampling
 from pymoo.indicators.hv import HV
 
+from src.genetica.repair import PortfolioConstraints
 from src.managerTitoli import StatsTitoli
-from src.utils.repair import PortfolioConstraints
 from src.valutazione import ValutatoreMultiplo
 
 

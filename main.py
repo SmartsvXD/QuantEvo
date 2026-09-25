@@ -3,7 +3,7 @@ import json
 from src.const import PERCENTUALE_MINIMA_TITOLO
 from src.genetica import run
 from src.managerTitoli import StatsTitoli
-from src.utils.repair import PortfolioConstraints
+from src.genetica.repair import PortfolioConstraints
 from src.valutazione import ValutatoreMultiplo
 from src.valutazione.cagr import CAGRIndice
 from src.valutazione.enb import ENBIndice
@@ -24,22 +24,22 @@ if __name__ == "__main__":
     s = StatsTitoli(titoli, forzaDownload=0, verbose=1)
     s.preparaBootstrap()
 
-    constraints = PortfolioConstraints(percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3)
+    constraints = PortfolioConstraints(percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3, maxTitoli=6)
 
-    cagr = CAGRIndice(daMassimizzare=True)
-    maxdrawdown = MaxDrawdownIndice()
-    cvar = TailCVarIndice()
+    cagr = CAGRIndice()
+    # rischio = MaxDrawdownIndice()
+    rischio = TailCVarIndice()
 
-    v = ValutatoreMultiplo((cagr, maxdrawdown, cvar))
+    v = ValutatoreMultiplo((cagr, rischio))
     vincoli = ValutatoreMultiplo(
         (
-            OmegaIndice(daMassimizzare=True, soglia=1.25, sogliaAnnua=0.035, metricaRischio="percentile", alpha=0.5),
-            ENCIndice(daMassimizzare=True, soglia=0.7, metricaRischio="percentile", alpha=0.5),
-            ENBIndice(daMassimizzare=True, soglia=1.6, metricaRischio="percentile", alpha=0.5),
+            OmegaIndice(soglia=1.25, sogliaAnnua=0.035, metricaRischio="percentile", alpha=0.5),
+            ENCIndice(soglia=0.6, metricaRischio="percentile", alpha=0.5),
+            ENBIndice(soglia=1.3, metricaRischio="percentile", alpha=0.5),
         )
     )
 
-    port, ris = run(s, v, constraints, vincoli=vincoli, seeds=None)
+    port, ris = run(s, v, constraints, vincoli=vincoli)
 
     if len(port) == 0:
         print("Nessun portafoglio valido trovato.")

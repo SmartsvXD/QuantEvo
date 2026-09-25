@@ -2,30 +2,30 @@ import time
 
 import numpy as np
 from colorama import Fore
+from src.const import INDICI_DEBUG
 
 
 class Indice:
+    PUO_FARE_BOOTSTRAP = True
+    DA_MASSIMIZZARE = False
+
     def __init__(
         self,
         metricaRischio="cvar",
         soglia=0.0,
         alpha=0.05,
         lambdaPenalitaStabilita=0.4,
-        daMassimizzare=False,
-        debug=False,
+        debug=INDICI_DEBUG,
     ):
-        self.daMassimizzare = daMassimizzare
         self.metricaRischio = metricaRischio
         self.alpha = alpha
         self.lambdaPenalitaStabilita = lambdaPenalitaStabilita
         self.soglia = soglia
-
-        self.puoFareBootstrap = True
         self.debug = debug
 
     def _aggregaValori(self, vals: np.ndarray):
         if self.metricaRischio == "cvar":
-            if self.daMassimizzare:
+            if self.DA_MASSIMIZZARE:
                 q = np.quantile(vals, self.alpha, axis=1, keepdims=True)
                 mask = vals <= q
             else:
@@ -36,7 +36,7 @@ class Indice:
             return np.sum(np.where(mask, vals, 0.0), axis=1) / counts
 
         elif self.metricaRischio == "percentile":
-            q_target = self.alpha if self.daMassimizzare else (1.0 - self.alpha)
+            q_target = self.alpha if self.DA_MASSIMIZZARE else (1.0 - self.alpha)
             return np.quantile(vals, q_target, axis=1)
 
         elif self.metricaRischio == "downside_penalty":
@@ -60,7 +60,7 @@ class Indice:
         *args,
         **kwargs,
     ):
-        faiBootstrap = faiBootstrap and self.puoFareBootstrap
+        faiBootstrap = faiBootstrap and self.PUO_FARE_BOOTSTRAP
         debug = debug or self.debug
 
         if debug:
@@ -87,7 +87,7 @@ class Indice:
         if not valoreOriginale:
             if self.soglia != 0.0:
                 data = (data - self.soglia) / abs(self.soglia)
-            if self.daMassimizzare:
+            if self.DA_MASSIMIZZARE:
                 data = -data
 
         return data

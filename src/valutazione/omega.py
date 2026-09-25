@@ -52,6 +52,8 @@ def _omegaNumba(portafoglio: np.ndarray, samples_3d: np.ndarray, soglia: float) 
 
 
 class OmegaIndice(Indice):
+    DA_MASSIMIZZARE = True
+    
     def __init__(self, sogliaAnnua=DEFAULT_RISK_FREE_RATE, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

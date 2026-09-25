@@ -26,6 +26,8 @@ def _calcola_enb_kernel(pesi: np.ndarray, corr: np.ndarray) -> np.ndarray:
 
 
 class ENBIndice(Indice):
+    DA_MASSIMIZZARE = True
+
     def _calcola(self, portafoglio: np.ndarray, stats: dict, *args, **kwargs) -> np.ndarray:
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
         corr = np.asarray(stats["corr"], dtype=np.float64)

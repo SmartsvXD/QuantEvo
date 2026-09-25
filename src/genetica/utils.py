@@ -1,12 +1,10 @@
 import numpy as np
 
-from src.utils.repair import PortfolioConstraints
 
-
-def trova_knee_point(F: np.ndarray) -> int:
+def trova_knee_point(F: np.ndarray, X: np.ndarray) -> int:
     n_points, n_obj = F.shape
     if n_points <= n_obj:
-        return 0
+        raise ValueError(f"Numero di punti ({n_points}) insufficiente per {n_obj} obiettivi")
 
     # 1. Normalizzazione min-max (spazio [0, 1])
     f_min = np.min(F, axis=0)
@@ -14,6 +12,8 @@ def trova_knee_point(F: np.ndarray) -> int:
     delta = f_max - f_min
     delta[delta == 0.0] = 1.0
     F_norm = (F - f_min) / delta
+    
+    knee_idx = None
 
     # Caso 2 OBIETTIVI: Distanza perpendicolare dalla retta congiungente i due estremi
     if n_obj == 2:
@@ -32,7 +32,7 @@ def trova_knee_point(F: np.ndarray) -> int:
             # |(x2 - x1)(y1 - y0) - (x1 - x0)(y2 - y1)| / ||v||
             numeratore = np.abs(v[0] * (p1[1] - F_norm[:, 1]) - (p1[0] - F_norm[:, 0]) * v[1])
             distanze = numeratore / v_norm
-            return int(np.argmax(distanze))
+            knee_idx = int(np.argmax(distanze))
 
     # Caso 3 OBIETTIVI: Distanza perpendicolare dal piano passante per i 3 estremi
     elif n_obj == 3:
@@ -53,63 +53,11 @@ def trova_knee_point(F: np.ndarray) -> int:
         if norm_len > 1e-8:
             normale_unitaria = normale / norm_len
             distanze = np.abs(np.dot(F_norm - p1, normale_unitaria))
-            return int(np.argmax(distanze))
+            knee_idx = int(np.argmax(distanze))
 
     # Fallback TOPSIS (minima distanza euclidea dall'origine ideale [0, 0, ...])
-    return int(np.argmin(np.linalg.norm(F_norm, axis=1)))
-
-
-def ordina(F, X, constraints: PortfolioConstraints, sum_tol=1e-8, zero_tol=1e-12):
-    if constraints.upper is None:
-        n = X.shape[1]
-        upper = np.ones(n)
-    else:
-        upper = constraints.upper
-
-    pct_min = constraints.percentualeMinima
-    min_titoli = constraints.minTitoli
-
-    invalid = []
-    for i in range(X.shape[0]):
-        row = X[i]
-
-        # 1. Valori negativi significativi
-        if np.any(row < -zero_tol):
-            invalid.append(i)
-            continue
-
-        # 2. Sopra l'upper bound
-        if np.any(row - upper > zero_tol):
-            invalid.append(i)
-            continue
-
-        # 3. Somma pesi = 1
-        if abs(row.sum() - 1.0) > sum_tol:
-            invalid.append(i)
-            continue
-
-        # 4. Pesi semi-continui: ammessi solo ~0 oppure >= (pct_min - tol)
-        mask_invalido = (row > zero_tol) & (row < pct_min - zero_tol)
-        if np.any(mask_invalido):
-            invalid.append(i)
-            continue
-
-        # 5. Cardinalità minima: asset con peso >= pct_min (con tolleranza)
-        n_active = int(np.sum(row >= pct_min - zero_tol))
-        if n_active < min_titoli:
-            invalid.append(i)
-            continue
-
-    print(f"Scartate {len(invalid)} soluzioni non valide su {X.shape[0]} totali.")
-    if len(invalid) > 0:
-        invalid = np.unique(np.array(invalid, dtype=np.int64))
-        X = np.delete(X, invalid, axis=0)
-        F = np.delete(F, invalid, axis=0)
-
-    if F.size == 0:
-        return None, None
-
-    knee_idx = trova_knee_point(F)
+    if knee_idx is None:
+        knee_idx = int(np.argmin(np.linalg.norm(F_norm, axis=1)))
 
     return F[knee_idx], X[knee_idx]
 

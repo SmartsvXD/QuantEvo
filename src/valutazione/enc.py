@@ -38,9 +38,8 @@ def _calcola_enc_kernel(
 
 
 class ENCIndice(Indice):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.puoFareBootstrap = False
+    PUO_FARE_BOOTSTRAP = False
+    DA_MASSIMIZZARE = True
 
     def _calcola(self, portafoglio: np.ndarray, stats: dict) -> np.ndarray:
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
