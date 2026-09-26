@@ -1,9 +1,7 @@
 __pycache__
 test.py
 .DS_Store
-*.json
 *.data
 *.txt
 *.md
 .venv
-benchmark.py

@@ -1,24 +1,51 @@
 import numpy as np
 
 
-def trova_knee_point(F: np.ndarray, X: np.ndarray) -> int:
-    n_points, n_obj = F.shape
-    if n_points <= n_obj:
-        raise ValueError(f"Numero di punti ({n_points}) insufficiente per {n_obj} obiettivi")
+def _maschera_pareto(F: np.ndarray) -> np.ndarray:
+    """Restituisce una maschera booleana con True per i punti non dominati (minimizzazione)."""
+    n_points = F.shape[0]
+    is_efficient = np.ones(n_points, dtype=bool)
 
-    # 1. Normalizzazione min-max (spazio [0, 1])
-    f_min = np.min(F, axis=0)
-    f_max = np.max(F, axis=0)
+    for i, f in enumerate(F):
+        if is_efficient[i]:
+            # Un punto j è dominato da i se F[j] >= F[i] su tutti gli obiettivi
+            # e F[j] > F[i] su almeno uno
+            dominati = np.all(F >= f, axis=1) & np.any(F > f, axis=1)
+            is_efficient[dominati] = False
+
+    return is_efficient
+
+
+def trova_knee_point(F: np.ndarray, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Identifica il knee point sul fronte di Pareto non dominato."""
+    if len(F) != len(X):
+        raise ValueError("F e X devono avere lo stesso numero di righe")
+
+    # 1. Filtra solo le soluzioni non dominate (fronte di Pareto globale)
+    mask_pareto = _maschera_pareto(F)
+    F_pareto = F[mask_pareto]
+    X_pareto = X[mask_pareto]
+
+    n_points, n_obj = F_pareto.shape
+    if n_points <= n_obj:
+        # Se i punti non dominati sono insufficienti, fallback sul primo punto o TOPSIS diretto
+        if n_points == 0:
+            raise ValueError("Nessun punto valido trovato")
+        return F_pareto[0], X_pareto[0]
+
+    # 2. Normalizzazione min-max solo sui punti non dominati
+    f_min = np.min(F_pareto, axis=0)
+    f_max = np.max(F_pareto, axis=0)
     delta = f_max - f_min
     delta[delta == 0.0] = 1.0
-    F_norm = (F - f_min) / delta
-    
+    F_norm = (F_pareto - f_min) / delta
+
     knee_idx = None
 
     # Caso 2 OBIETTIVI: Distanza perpendicolare dalla retta congiungente i due estremi
     if n_obj == 2:
-        idx_p1 = int(np.argmin(F_norm[:, 0]))  # Migliore su asse 0
-        idx_p2 = int(np.argmin(F_norm[:, 1]))  # Migliore su asse 1
+        idx_p1 = int(np.argmin(F_norm[:, 0]))
+        idx_p2 = int(np.argmin(F_norm[:, 1]))
 
         p1 = F_norm[idx_p1]
         p2 = F_norm[idx_p2]
@@ -26,10 +53,7 @@ def trova_knee_point(F: np.ndarray, X: np.ndarray) -> int:
         v = p2 - p1
         v_norm = np.linalg.norm(v)
 
-        # Se gli estremi non coincidono (fronte non degenere)
         if v_norm > 1e-8:
-            # Distanza ortogonale punto-retta in 2D tramite prodotto vettoriale bidimensionale:
-            # |(x2 - x1)(y1 - y0) - (x1 - x0)(y2 - y1)| / ||v||
             numeratore = np.abs(v[0] * (p1[1] - F_norm[:, 1]) - (p1[0] - F_norm[:, 0]) * v[1])
             distanze = numeratore / v_norm
             knee_idx = int(np.argmax(distanze))
@@ -49,7 +73,6 @@ def trova_knee_point(F: np.ndarray, X: np.ndarray) -> int:
         normale = np.cross(v1, v2)
         norm_len = np.linalg.norm(normale)
 
-        # Se i tre punti definiscono un piano non degenere
         if norm_len > 1e-8:
             normale_unitaria = normale / norm_len
             distanze = np.abs(np.dot(F_norm - p1, normale_unitaria))
@@ -59,7 +82,7 @@ def trova_knee_point(F: np.ndarray, X: np.ndarray) -> int:
     if knee_idx is None:
         knee_idx = int(np.argmin(np.linalg.norm(F_norm, axis=1)))
 
-    return F[knee_idx], X[knee_idx]
+    return F_pareto[knee_idx], X_pareto[knee_idx]
 
 
 def stima_hv_ref_point(statsStoriche, valutatore, constraints, n_campioni=50, margine=0.2):
@@ -68,21 +91,20 @@ def stima_hv_ref_point(statsStoriche, valutatore, constraints, n_campioni=50, ma
 
     :param margine: Percentuale di margine di peggioramento oltre il peggior valore trovato (es. +20%).
     """
-    n_asset = len(statsStoriche.nomi)
     campioni = []
 
     # 1. Portafogli 100% su singolo asset (se ammessi dai constraints, o riparati)
-    for i in range(n_asset):
-        w = np.zeros(n_asset)
+    for i in range(statsStoriche.nTitoli):
+        w = np.zeros(statsStoriche.nTitoli)
         w[i] = 1.0
         campioni.append(constraints.applica(w))
 
     # 2. Portafoglio equiponderato
-    campioni.append(constraints.applica(np.ones(n_asset) / n_asset))
+    campioni.append(constraints.applica(np.ones(statsStoriche.nTitoli) / statsStoriche.nTitoli))
 
     # 3. Portafogli casuali conformi ai vincoli
     for _ in range(n_campioni):
-        w_rand = np.random.rand(n_asset)
+        w_rand = np.random.rand(statsStoriche.nTitoli)
         campioni.append(constraints.applica(w_rand))
 
     X_sample = np.array(campioni)

@@ -34,7 +34,6 @@ def run(
     if verbose >= 1:
         print(f"\n{Fore.MAGENTA}Esecuzione dell'algoritmo evolutivo...{Fore.LIGHTBLACK_EX}")
 
-    nValutazioni = len(statsStoriche.nomi)
     seeds = seeds if seeds is not None else [1]
 
     all_F, all_X = [], []
@@ -43,16 +42,16 @@ def run(
         seed_int = int(s)
         np.random.seed(seed_int)
 
-        problem = ProblemaPortafoglio(statsStoriche, nValutazioni, valutatore=valutatore, vincoli=vincoli)
+        problem = ProblemaPortafoglio(statsStoriche, statsStoriche.nTitoli, valutatore=valutatore, vincoli=vincoli)
 
-        sampling = ValidPortfolioSampling(nValutazioni, constraints=constraints)
+        sampling = ValidPortfolioSampling(statsStoriche.nTitoli, constraints=constraints)
         repair = PortfolioRepair(constraints=constraints)
 
         algorithm = NSGA2(
             pop_size=popSize,
             sampling=sampling,
             crossover=SBX(prob=0.9, eta=20),
-            mutation=PM(prob=1.0 / nValutazioni, eta=25),
+            mutation=PM(prob=1.0 / statsStoriche.nTitoli, eta=25),
             repair=repair,
         )
 

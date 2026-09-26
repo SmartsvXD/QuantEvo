@@ -19,6 +19,8 @@ class StatsTitoliSemplice:
         }
         
         self.stats_boot = {}
+        
+        self.nTitoli = rendimenti.shape[0]
 
     def calcolaStats(self, rendimenti):
         stats = {}

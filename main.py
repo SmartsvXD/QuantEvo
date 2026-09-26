@@ -1,45 +1,36 @@
-import json
-
-from src.const import PERCENTUALE_MINIMA_TITOLO
+import config
 from src.genetica import run
-from src.managerTitoli import StatsTitoli
 from src.genetica.repair import PortfolioConstraints
+from src.managerTitoli import StatsTitoli
 from src.valutazione import ValutatoreMultiplo
-from src.valutazione.cagr import CAGRIndice
-from src.valutazione.enb import ENBIndice
-from src.valutazione.enc import ENCIndice
-from src.valutazione.maxDrawdown import MaxDrawdownIndice
-from src.valutazione.omega import OmegaIndice
-from src.valutazione.tailCVar import TailCVarIndice
 
 if __name__ == "__main__":
-    with open("titoli.json", "r") as file:
-        data = json.load(file)
-
-    titoli = [x[0] for x in data]
-    upper = [x[1] for x in data]
-
-    s = StatsTitoli(titoli, forzaDownload=0, verbose=1)
-    s.preparaBootstrap()
+    titoli = [x["name"] for x in config.assets]
+    upper = [x["upper"] for x in config.assets]
 
     constraints = PortfolioConstraints(
-        percentualeMinima=PERCENTUALE_MINIMA_TITOLO, upper=upper, minTitoli=3, maxTitoli=6
+        percentualeMinima=config.structural_constraints["minimum_percentage_per_asset"],
+        upper=upper,
+        minTitoli=config.structural_constraints["minimum_number_of_assets"],
+        maxTitoli=config.structural_constraints["maximum_number_of_assets"],
     )
 
-    cagr = CAGRIndice()
-    # rischio = MaxDrawdownIndice()
-    rischio = TailCVarIndice()
+    stats = StatsTitoli(titoli, forzaDownload=0, verbose=1)
+    stats = stats.preparaSingolo()
+    stats.preparaBootstrap(randomState=config.random_state)
 
-    v = ValutatoreMultiplo((cagr, rischio))
-    vincoli = ValutatoreMultiplo(
-        (
-            OmegaIndice(soglia=1.25, sogliaAnnua=0.035, metricaRischio="percentile", alpha=0.5),
-            ENCIndice(soglia=3.8, metricaRischio="percentile", alpha=0.5),
-            ENBIndice(soglia=1.2, metricaRischio="percentile", alpha=0.5),
-        )
+    objFunc = ValutatoreMultiplo(config.objective_functions)
+    vincoli = ValutatoreMultiplo(config.contraints)
+
+    port, ris = run(
+        stats,
+        objFunc,
+        constraints,
+        vincoli=vincoli,
+        seeds=list(range(config.random_state, config.random_state + config.optimization_config["n_seeds"])),
+        popSize=config.optimization_config["pop_size"],
+        nGen=config.optimization_config["n_gen"],
     )
-
-    port, ris = run(s, v, constraints, vincoli=vincoli)
 
     if len(port) == 0:
         print("Nessun portafoglio valido trovato.")
@@ -49,9 +40,9 @@ if __name__ == "__main__":
             print(f"{titoli[i]}: {port[i]:.1%}")
 
         print()
-        for i in v.indici:
-            print(f"{i.__class__.__name__}: {i.calcola(port, s, valoreOriginale=True, faiBootstrap=False):.4f}")
+        for i in objFunc.indici:
+            print(f"{i.__class__.__name__}: {i.calcola(port, stats, valoreOriginale=True, faiBootstrap=False):.4f}")
 
         print()
         for i in vincoli.indici:
-            print(f"{i.__class__.__name__}: {i.calcola(port, s, valoreOriginale=True, faiBootstrap=False):.4f}")
+            print(f"{i.__class__.__name__}: {i.calcola(port, stats, valoreOriginale=True, faiBootstrap=False):.4f}")
