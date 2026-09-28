@@ -24,7 +24,7 @@ def run(
     nGen=500,
     seeds=None,
     faiEarlyStopping=True,
-    pazienzaEarlyStopping=40,
+    pazienzaEarlyStopping=10,
     stima_ref_point=True,
     hv_ref_point=None,
     verbose=1,

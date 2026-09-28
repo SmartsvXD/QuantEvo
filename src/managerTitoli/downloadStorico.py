@@ -4,6 +4,7 @@ import pickle as pk
 import time
 
 import numpy as np
+import pandas as pd
 import yfinance as yf
 from colorama import Fore
 
@@ -30,21 +31,12 @@ def _downloadYFinance(nomi: tuple, anni: int):
         actions=True,  # per dividendi e split
     )
 
-    # * Controlliamo quali ticker sono effettivamente presenti nel risultato.
-    scaricati = []
-    if "Adj Close" in data and hasattr(data["Adj Close"], "columns"):
-        scaricati = list(data["Adj Close"].columns)
-
-    if len(scaricati) != len(nomi):
-        mancanti = set(nomi) - set(scaricati)
-        if mancanti:
-            raise Exception(f"{Fore.RED}Download incompleto, mancano: {', '.join(mancanti)}{Fore.RESET}")
-        return None, None, None
-
     # * Riordina i dati per avere lo stesso ordine di nomi
     adjClose = data.get("Adj Close")
-
-    adjClose = adjClose[nomi]
+    if isinstance(adjClose, pd.Series):
+        adjClose = adjClose.to_frame(name=nomi[0])
+    else:
+        adjClose = adjClose[list(nomi)]
 
     # * Filtra ticker che non rispettano un limite minimo di giorni di dati
     nomi_invalidi = [ticker for ticker in nomi if len(adjClose[ticker].dropna()) <= GIORNI_MINIMI_VALIDITA]
@@ -56,10 +48,16 @@ def _downloadYFinance(nomi: tuple, anni: int):
         raise Exception("Impossibile continuare, i titoli non rispettano i limiti minimi di giorni")
 
     # * Trasforma i dati in numpy array
-    # Usa rendimenti lineari
-    rendimenti = np.array(adjClose.pct_change().dropna().T, dtype=np.float64)  # shape: (n_assets, n_days)
+    # Calcola rendimenti e allinea rigorosamente le date DOPO il dropna
+    rets_df = adjClose.pct_change().dropna(how="any")
+    
+    if rets_df.empty:
+        raise ValueError("I titoli richiesti non hanno date storiche in comune.")
+    
+    date = rets_df.index
+    rendimenti = np.atleast_2d(rets_df.T.to_numpy(dtype=np.float64))
 
-    return rendimenti
+    return rendimenti, date
 
 
 def download(
@@ -89,6 +87,8 @@ def download(
     t0 = time.time()
     OGGI = dt.datetime.now(tz=dt.timezone.utc).date()
 
+    os.makedirs("./data", exist_ok=True)
+
     # * Verifichiamo se dovremmo scaricare o meno
     # Se non esiste un cache o è forzato devi scaricare
     if (
@@ -105,7 +105,7 @@ def download(
         # Se il cache è più vecchio di un giorn o se non contiene gli stessi titoli non va bene
         if (
             ((OGGI - info["data"]).days >= 1)
-            or info["titoli"] != nomi
+            or tuple(info["titoli"]) != tuple(nomi)
             or info["fonte"] != fonte
             or info["anni"] != anni
         ):
@@ -119,13 +119,12 @@ def download(
             if verbose:
                 print(f"\n{Fore.MAGENTA}Scaricando i dati da Yahoo Finance{Fore.RESET}:{Fore.LIGHTBLACK_EX}")
 
-            rendimenti = _downloadYFinance(nomi, anni)
+            rendimenti, date = _downloadYFinance(nomi, anni)
         else:
-            print(f"{Fore.RED}ERRORE! La fonte {fonte} non è valida!{Fore.RESET}")
-
+            raise Exception(f"Fonte {fonte} non supportata, impossibile continuare.")
+        
         if rendimenti is None:
-            print(f"{Fore.RED}ERRORE! Impossibile scaricare i dati!{Fore.RESET}")
-            return None
+            raise Exception("Errore nel download dei dati, impossibile continuare.")
 
         # Salviamo i nuovi dati scaricati
         if verbose:
@@ -140,7 +139,7 @@ def download(
 
         # Salviamo i dati
         with open("./data/titoliDownload.data", "wb") as file:
-            pk.dump(rendimenti, file)
+            pk.dump((rendimenti, date), file)
 
     # * Carichiamo i dati dal cache
     else:
@@ -150,10 +149,10 @@ def download(
             )
 
         with open("./data/titoliDownload.data", "rb") as file:
-            rendimenti = pk.load(file)
+            rendimenti, date = pk.load(file)
 
     t = time.time() - t0
     if verbose:
         print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({t:.2f}s)")
 
-    return rendimenti
+    return rendimenti, date

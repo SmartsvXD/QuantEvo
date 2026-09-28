@@ -20,7 +20,7 @@ if __name__ == "__main__":
     stats.preparaBootstrap(randomState=config.random_state)
 
     objFunc = ValutatoreMultiplo(config.objective_functions)
-    vincoli = ValutatoreMultiplo(config.contraints)
+    vincoli = ValutatoreMultiplo(config.constraints)
 
     port, ris = run(
         stats,

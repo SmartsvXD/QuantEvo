@@ -1,8 +1,6 @@
 colorama
 yfinance
 numba
-matplotlib
-optuna
 scipy
 pymoo
-scikit-learn
+pandas
