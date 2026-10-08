@@ -30,7 +30,7 @@ def trova_knee_point(F: np.ndarray, X: np.ndarray) -> tuple[np.ndarray, np.ndarr
     if n_points <= n_obj:
         # Se i punti non dominati sono insufficienti, fallback sul primo punto o TOPSIS diretto
         if n_points == 0:
-            raise ValueError("Nessun punto valido trovato")
+            return [], []
         return F_pareto[0], X_pareto[0]
 
     # 2. Normalizzazione min-max solo sui punti non dominati

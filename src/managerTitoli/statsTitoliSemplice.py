@@ -4,30 +4,23 @@ import numpy as np
 from colorama import Fore
 from sklearn.covariance import LedoitWolf
 
-from src.const import (
-    DEFAULT_N_BOOSTRAP,
-    N_PUNTI_BARRA_CARICAMENTO,
-)
+from src.const import N_PUNTI_BARRA_CARICAMENTO
 
 
 class StatsTitoliSemplice:
     def __init__(self, rendimenti):
         raw_stats = self.calcolaStats(rendimenti)
-        self.stats = {
-            k: np.expand_dims(v, axis=0) if isinstance(v, np.ndarray) else v
-            for k, v in raw_stats.items()
-        }
-        
+        self.stats = {k: np.expand_dims(v, axis=0) if isinstance(v, np.ndarray) else v for k, v in raw_stats.items()}
+
         self.stats_boot = {}
-        
+
         self.nTitoli = rendimenti.shape[0]
 
     def calcolaStats(self, rendimenti):
         stats = {}
         stats["rendimenti"] = rendimenti
 
-        # Diversificazione, Rischio
-        stats["corr"] = self.calcolaMatriceCorrelazioneECovarianza(rendimenti)
+        stats["corr"], stats["cov"] = self.calcolaMatriceCorrelazioneECovarianza(rendimenti)
 
         return stats
 
@@ -66,7 +59,7 @@ class StatsTitoliSemplice:
         corr_matrix = np.clip(corr_matrix, -1.0, 1.0)
         np.fill_diagonal(corr_matrix, 1.0)
 
-        return corr_matrix
+        return corr_matrix, cov
 
     @staticmethod
     def _generaIndiciBlocchi(T: int, nBootstrap: int, lunghezzaBlocco: int, rng: np.random.Generator):
@@ -80,7 +73,7 @@ class StatsTitoliSemplice:
 
     def preparaBootstrap(
         self,
-        nBootstrap: int = DEFAULT_N_BOOSTRAP,
+        nBootstrap: int = 100,
         lunghezzaBlocco: int = 20,
         randomState=None,
         verbose: bool = True,
@@ -118,7 +111,7 @@ class StatsTitoliSemplice:
         if verbose:
             print(f"\r{Fore.LIGHTBLACK_EX}{nBootstrap}/{nBootstrap} [{'*' * N_PUNTI_BARRA_CARICAMENTO}]{Fore.RESET}")
             print(f"{Fore.MAGENTA}Fatto!{Fore.RESET} ({time.time() - t0:.2f}s)")
-            
+
     def ottieni(self, bootstrap: bool = True) -> dict:
         if bootstrap:
             if not self.stats_boot:

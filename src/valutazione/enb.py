@@ -5,9 +5,9 @@ from src.valutazione.indice import Indice
 
 
 @njit(fastmath=True)
-def _calcola_enb_kernel(pesi: np.ndarray, corr: np.ndarray) -> np.ndarray:
+def _calcola_enb_kernel(pesi: np.ndarray, cov: np.ndarray) -> np.ndarray:
     n_p, n_assets = pesi.shape
-    n_b = corr.shape[0]
+    n_b = cov.shape[0]
     res = np.zeros((n_p, n_b), dtype=np.float64)
 
     # Buffer riutilizzabile per i contributi di rischio delle scommesse
@@ -15,7 +15,7 @@ def _calcola_enb_kernel(pesi: np.ndarray, corr: np.ndarray) -> np.ndarray:
 
     for b in range(n_b):
         # Autovalori (vals) e autovettori ortonormali (vecs)
-        vals, vecs = np.linalg.eigh(corr[b])
+        vals, vecs = np.linalg.eigh(cov[b])
 
         # Clamping per evitare piccoli autovalori negativi dovuti a errori numerici
         for i in range(n_assets):
@@ -54,12 +54,12 @@ def _calcola_enb_kernel(pesi: np.ndarray, corr: np.ndarray) -> np.ndarray:
 class ENBIndice(Indice):
     DA_MASSIMIZZARE = True
 
-    def _calcola(self, portafoglio: np.ndarray, stats: dict, *args, **kwargs) -> np.ndarray:
+    def _calcola(self, portafoglio: np.ndarray, stats: dict) -> np.ndarray:
         p = np.ascontiguousarray(np.atleast_2d(portafoglio), dtype=np.float64)
-        corr = np.asarray(stats["corr"], dtype=np.float64)
+        cov = np.asarray(stats["cov"], dtype=np.float64)
 
-        if corr.ndim == 2:
-            corr = corr[np.newaxis, :, :]
+        if cov.ndim == 2:
+            cov = cov[np.newaxis, :, :]
 
-        corr = np.ascontiguousarray(corr)
-        return _calcola_enb_kernel(pesi=p, corr=corr)
+        cov = np.ascontiguousarray(cov)
+        return _calcola_enb_kernel(pesi=p, cov=cov)

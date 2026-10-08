@@ -13,7 +13,7 @@ from src.const import GIORNI_MINIMI_VALIDITA
 
 def _downloadYFinance(nomi: tuple, anni: int):
     """
-    Scarica i dati suando yfinance come fonte
+    Scarica i dati usando yfinance come fonte
 
     :param nomi: I nomi dei titoli che si vuole scaricare, deve essere una lista/tupla di nomi
     :type nomi: `tuple`
@@ -50,10 +50,10 @@ def _downloadYFinance(nomi: tuple, anni: int):
     # * Trasforma i dati in numpy array
     # Calcola rendimenti e allinea rigorosamente le date DOPO il dropna
     rets_df = adjClose.pct_change().dropna(how="any")
-    
+
     if rets_df.empty:
         raise ValueError("I titoli richiesti non hanno date storiche in comune.")
-    
+
     date = rets_df.index
     rendimenti = np.atleast_2d(rets_df.T.to_numpy(dtype=np.float64))
 
@@ -61,8 +61,8 @@ def _downloadYFinance(nomi: tuple, anni: int):
 
 
 def download(
-    nomi: tuple, fonte: str = "yfinance", anni: int = 50, forzaDownload: bool = 1, verbose: bool = 1
-) -> np.array | None:
+    nomi: tuple, fonte: str = "yfinance", anni: int = 50, forzaDownload: bool = True, verbose: bool = True
+) -> tuple[np.ndarray, pd.DatetimeIndex]:
     """
     Permette di ottenere le informazioni per i titoli richiesti. Se esistono dei dati validi salvati in cache li carica da li,
     mentre se non esistono li scarica direttamente dalla fonte richiesta. Restituisce rendimenti, close, dividendi.
@@ -82,7 +82,7 @@ def download(
     """
 
     # Variabile booleana che determinerà se i dati devono essere scaricati o presi dal cache
-    scarica = 0
+    scarica = False
 
     t0 = time.time()
     OGGI = dt.datetime.now(tz=dt.timezone.utc).date()
@@ -96,22 +96,22 @@ def download(
         or not (os.path.exists("./data/infoDownload.data"))
         or forzaDownload
     ):
-        scarica = 1
+        scarica = True
     else:
-        # Se il file esite e il download non è forzato dovremmo verificare che il cache sia idoneo
+        # Se il file esiste e il download non è forzato dovremmo verificare che il cache sia idoneo
         with open("./data/infoDownload.data", "rb") as file:
             info = pk.load(file)
 
-        # Se il cache è più vecchio di un giorn o se non contiene gli stessi titoli non va bene
+        # Se il cache è più vecchio di un giorno o se non contiene gli stessi titoli non va bene
         if (
             ((OGGI - info["data"]).days >= 1)
             or tuple(info["titoli"]) != tuple(nomi)
             or info["fonte"] != fonte
             or info["anni"] != anni
         ):
-            scarica = 1
+            scarica = True
         else:
-            scarica = 0
+            scarica = False
 
     # * Scarichiamo i dati se dobbiamo
     if scarica:
@@ -122,7 +122,7 @@ def download(
             rendimenti, date = _downloadYFinance(nomi, anni)
         else:
             raise Exception(f"Fonte {fonte} non supportata, impossibile continuare.")
-        
+
         if rendimenti is None:
             raise Exception("Errore nel download dei dati, impossibile continuare.")
 

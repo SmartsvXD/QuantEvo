@@ -8,9 +8,9 @@ class StatsTitoli:
         self,
         nomi: tuple,
         W: int = 3 * GIORNI_IN_UN_ANNO,
-        wOOS: int = 2 *GIORNI_IN_UN_ANNO,
+        wOOS: int = 2 * GIORNI_IN_UN_ANNO,
         forzaDownload=True,
-        verbose=1,
+        verbose=True,
     ):
         self.nomi = nomi
         self.rendimenti, self.date = download(

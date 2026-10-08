@@ -4,3 +4,4 @@ numba
 scipy
 pymoo
 pandas
+scikit-learn
