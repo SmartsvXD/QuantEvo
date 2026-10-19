@@ -1,17 +1,17 @@
 # STANDARD AMERICAN
 
-from src.const import GIORNI_IN_UN_ANNO
-from src.valutazione.cagr import CAGRIndice
-from src.valutazione.enb import ENBIndice
-from src.valutazione.enc import ENCIndice
-from src.valutazione.omega import OmegaIndice
-from src.valutazione.tailCVar import TailCVarIndice
+from src.constants import TRADING_DAYS_PER_YEAR
+from src.metrics.cagr import CAGR
+from src.metrics.cvar import CVaR
+from src.metrics.enb import ENB
+from src.metrics.enc import ENC
+from src.metrics.omega import Omega
 
 random_state = 42
 
 # Window size in days for the in-sample period and out-of-sample period
-window_size = GIORNI_IN_UN_ANNO * 3
-window_size_out_of_sample = GIORNI_IN_UN_ANNO * 2
+window_size = TRADING_DAYS_PER_YEAR * 3
+window_size_out_of_sample = TRADING_DAYS_PER_YEAR * 2
 
 # Configuration for the statistical analysis
 stats_config = {
@@ -26,7 +26,7 @@ optimization_config = {
     "n_seeds": 10,
     "do_early_stopping": True,
     "early_stopping_patience": 10,
-    "esteem_ref_point": True,
+    "estimate_ref_point": True,
     "hv_ref_point": None,
 }
 
@@ -49,13 +49,13 @@ assets = [
 
 # List of objective functions to be maximized during the optimization process
 objective_functions = [
-    CAGRIndice(),
-    TailCVarIndice(),
+    CAGR(),
+    CVaR(),
 ]
 
 # List of constraints to be satisfied during the optimization process
 constraints = [
-    OmegaIndice(soglia=1.2, sogliaAnnua=0.035, metricaRischio="percentile", alpha=0.5),
-    ENCIndice(soglia=3.7, metricaRischio="percentile", alpha=0.5),
-    ENBIndice(soglia=1.2, metricaRischio="percentile", alpha=0.5),
+    Omega(threshold=1.2, annual_hurdle_rate=0.035, risk_measure="percentile", alpha=0.5),
+    ENC(threshold=3.7, risk_measure="percentile", alpha=0.5),
+    ENB(threshold=1.2, risk_measure="percentile", alpha=0.5),
 ]
