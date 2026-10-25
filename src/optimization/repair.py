@@ -1,4 +1,5 @@
 import numpy as np
+from colorama import Fore
 from numba import njit
 
 
@@ -92,7 +93,7 @@ def _project_row(
         idx_sorted[best_active_pos] = idx_inact
         idx_sorted[best_inactive_pos] = idx_act
 
-        sum_upper += (max_inactive_upper - min_active_upper)
+        sum_upper += max_inactive_upper - min_active_upper
 
     # 4. Active mask: zero out excluded assets beyond k
     is_active = np.zeros(n, dtype=np.bool_)
@@ -331,6 +332,7 @@ class PortfolioConstraints:
         F: np.ndarray,
         sum_tol: float = 1e-8,
         zero_tol: float = 1e-12,
+        verbose: bool = True,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Filters out solutions that violate budget, bound, or cardinality constraints.
@@ -339,6 +341,7 @@ class PortfolioConstraints:
         :param F: Objective function values array of shape (P, M).
         :param sum_tol: Tolerance for budget constraint (|sum(w) - 1| <= sum_tol).
         :param zero_tol: Tolerance for non-negativity and boundary checks.
+        :param verbose: If True, prints the number of discarded solutions.
         :return: Tuple of filtered (F, X) arrays containing only valid solutions.
         """
         n = X.shape[1]
@@ -378,7 +381,11 @@ class PortfolioConstraints:
                 invalid.append(i)
                 continue
 
-        print(f"Discarded {len(invalid)} invalid solutions out of {X.shape[0]} total.")
+        if verbose:
+            print(
+                f"{Fore.MAGENTA}Discarded {Fore.RESET}{len(invalid)}{Fore.MAGENTA} invalid solutions out of {Fore.RESET}{X.shape[0]}{Fore.MAGENTA} total.{Fore.RESET}"
+            )
+
         if len(invalid) > 0:
             invalid = np.unique(np.array(invalid, dtype=np.int64))
             X = np.delete(X, invalid, axis=0)

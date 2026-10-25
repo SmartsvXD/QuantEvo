@@ -1,14 +1,22 @@
 import argparse
+import datetime as dt
 import importlib
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
+
 import config
-from src.data import HistoricalDataset
+from src.data import HistoricalDataset, SampleStatistics
 from src.metrics import MetricSuite
 from src.optimization import PortfolioConstraints, optimize_portfolio
 
 
-def main(config_module: object = config) -> None:
+def main(
+    config_module: object = config,
+    end_date: str | dt.date | dt.datetime | pd.Timestamp | None = None,
+    verbose: bool = True,
+) -> tuple[np.ndarray, HistoricalDataset, SampleStatistics]:
     # 1. Initialize constraints and historical dataset
     tickers = [x.get("name", "") for x in config_module.assets]
     upper = [x.get("upper", 1.0) for x in config_module.assets]
@@ -20,18 +28,20 @@ def main(config_module: object = config) -> None:
         max_assets=config_module.structural_constraints.get("maximum_number_of_assets", 10),
     )
 
-    stats = HistoricalDataset(
+    hist_stats = HistoricalDataset(
         tickers,
         in_sample_window=config_module.window_size,
         out_of_sample_window=config_module.window_size_out_of_sample,
         force_download=False,
-        verbose=True,
+        end_date=end_date,
+        verbose=verbose,
     )
-    stats = stats.prepare_single_window()
+    stats = hist_stats.prepare_single_window()
     stats.prepare_bootstrap(
         random_state=config_module.random_state,
         n_bootstrap=config_module.stats_config.get("bootstrap_size", 100),
         block_length=config_module.stats_config.get("bootstrap_block_size", 20),
+        verbose=verbose,
     )
 
     # 2. Run multi-objective optimization
@@ -55,23 +65,27 @@ def main(config_module: object = config) -> None:
         early_stopping_patience=config_module.optimization_config.get("early_stopping_patience", 10),
         estimate_ref_point=config_module.optimization_config.get("estimate_ref_point", True),
         hv_ref_point=config_module.optimization_config.get("hv_ref_point", None),
+        verbose=verbose,
     )
 
     # 3. Display portfolio weights and metrics
-    if len(port) == 0:
-        print("No valid portfolio found.")
-    else:
-        print("\n")
-        for i in range(len(tickers)):
-            print(f"{tickers[i]}: {port[i]:.1%}")
+    if verbose:
+        if len(port) == 0:
+            print("No valid portfolio found.")
+        else:
+            print("\n")
+            for i in range(len(tickers)):
+                print(f"{tickers[i]}: {port[i]:.1%}")
 
-        print()
-        for i in obj_func.metrics:
-            print(f"{i.__class__.__name__}: {i.calculate(port, stats, raw_scale=True, do_bootstrap=False):.4f}")
+            print()
+            for i in obj_func.metrics:
+                print(f"{i.__class__.__name__}: {i.calculate(port, stats, raw_scale=True, do_bootstrap=False):.4f}")
 
-        print()
-        for i in constraints_evaluator.metrics:
-            print(f"{i.__class__.__name__}: {i.calculate(port, stats, raw_scale=True, do_bootstrap=False):.4f}")
+            print()
+            for i in constraints_evaluator.metrics:
+                print(f"{i.__class__.__name__}: {i.calculate(port, stats, raw_scale=True, do_bootstrap=False):.4f}")
+
+    return port, hist_stats, stats
 
 
 if __name__ == "__main__":
@@ -79,6 +93,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config", type=str, default="config", help="Name of the configuration module (without .py extension)."
     )
+    parser.add_argument("--end-date", type=str, default=None, help="Optional cutoff date for historical data.")
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -89,4 +104,4 @@ if __name__ == "__main__":
     else:
         config_module = importlib.import_module(args.config)
 
-    main(config_module=config_module)
+    main(config_module=config_module, end_date=args.end_date, verbose=True)

@@ -61,7 +61,12 @@ def _download_yfinance(tickers: tuple, years: int) -> tuple[np.ndarray, pd.Datet
 
 
 def download(
-    tickers: tuple, source: str = "yfinance", years: int = 50, force_download: bool = True, verbose: bool = True
+    tickers: tuple,
+    source: str = "yfinance",
+    years: int = 50,
+    force_download: bool = True,
+    verbose: bool = True,
+    end_date: str | dt.date | dt.datetime | pd.Timestamp | None = None,
 ) -> tuple[np.ndarray, pd.DatetimeIndex]:
     """
     Retrieves information for the requested assets. If valid cached data exists, loads from there,
@@ -77,6 +82,8 @@ def download(
     :type force_download: `bool`
     :param verbose: Specifies whether to print information on progress.
     :type verbose: `bool`
+    :param end_date: Optional cutoff date. Drops all data subsequent to this date.
+    :type end_date: `str | dt.date | dt.datetime | pd.Timestamp | None`
     :return: Historical data of the requested assets.
     :rtype: `tuple[np.ndarray, pd.DatetimeIndex]`
     """
@@ -159,5 +166,16 @@ def download(
     t = time.time() - t0
     if verbose:
         print(f"{Fore.MAGENTA}Done!{Fore.RESET} ({t:.2f}s)")
+
+    target_date = end_date
+    if target_date is not None:
+        target_dt = pd.to_datetime(target_date)
+        if dates.tz is not None and target_dt.tz is None:
+            target_dt = target_dt.tz_localize(dates.tz)
+        elif dates.tz is None and target_dt.tz is not None:
+            target_dt = target_dt.tz_localize(None)
+        mask = dates <= target_dt
+        returns = returns[:, mask]
+        dates = dates[mask]
 
     return returns, dates

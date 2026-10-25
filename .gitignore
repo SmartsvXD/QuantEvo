@@ -1,8 +1,8 @@
 __pycache__
-test.py
 .DS_Store
 *.data
 *.txt
 *.md
 .venv
 *.csv
+*.png

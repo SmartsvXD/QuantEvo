@@ -40,16 +40,13 @@ structural_constraints = {
 # List of assets with their respective upper bounds for portfolio allocation
 assets = [
     {"name": "VTI", "upper": 0.70},
-    {"name": "VEA", "upper": 0.50},
-    {"name": "VWO", "upper": 0.30},
-    {"name": "BND", "upper": 0.50},
-    {"name": "BNDX", "upper": 0.50},
-    {"name": "DBMF", "upper": 0.50},
-    {"name": "GLD", "upper": 0.30},
-    {"name": "VTIP", "upper": 0.30},
-    {"name": "PDBC", "upper": 0.50},
+    {"name": "VEA", "upper": 0.40},
+    {"name": "VWO", "upper": 0.15},
+    {"name": "BND", "upper": 0.80},
+    {"name": "VGLT", "upper": 0.25},
+    {"name": "VNQ", "upper": 0.15},
+    {"name": "VGSH", "upper": 0.40},
 ]
-
 
 # List of objective functions to be maximized during the optimization process
 objective_functions = [
@@ -59,7 +56,7 @@ objective_functions = [
 
 # List of constraints to be satisfied during the optimization process
 constraints = [
-    ENC(threshold=4.5, risk_measure="percentile", alpha=0.5),
-    ENB(threshold=4.0, risk_measure="percentile", alpha=0.5),
-    CAGR(threshold=0.06, risk_measure="percentile", alpha=0.5),
+    ENC(threshold=3.9, risk_measure="percentile", alpha=0.5),
+    ENB(threshold=3.5, risk_measure="percentile", alpha=0.5),
+    CAGR(threshold=0.05, risk_measure="percentile", alpha=0.5),
 ]

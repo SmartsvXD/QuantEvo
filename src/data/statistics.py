@@ -1,6 +1,8 @@
+import datetime as dt
 import time
 
 import numpy as np
+import pandas as pd
 from colorama import Fore
 from sklearn.covariance import LedoitWolf
 
@@ -149,14 +151,17 @@ class HistoricalDataset:
         out_of_sample_window: int = 2 * TRADING_DAYS_PER_YEAR,
         force_download: bool = True,
         verbose: bool = True,
+        end_date: str | dt.date | dt.datetime | pd.Timestamp | None = None,
     ) -> None:
         self.tickers = tickers
+        self.end_date = end_date
         self.returns, self.dates = download(
             tickers,
             source="yfinance",
             years=50,
             force_download=force_download,
             verbose=verbose,
+            end_date=self.end_date,
         )
 
         self.in_sample_window = in_sample_window

@@ -1,4 +1,4 @@
-# STANDARD AMERICAN
+# STANDARD USA
 
 from src.constants import TRADING_DAYS_PER_YEAR
 from src.metrics.cagr import CAGR
@@ -42,8 +42,7 @@ assets = [
     {"name": "VTI", "upper": 0.70},
     {"name": "VEA", "upper": 0.50},
     {"name": "VWO", "upper": 0.30},
-    {"name": "BND", "upper": 0.50},
-    {"name": "BNDX", "upper": 0.50},
+    {"name": "BND", "upper": 0.40},
 ]
 
 
@@ -55,7 +54,7 @@ objective_functions = [
 
 # List of constraints to be satisfied during the optimization process
 constraints = [
-    Omega(threshold=1.2, annual_hurdle_rate=0.035, risk_measure="percentile", alpha=0.5),
-    ENC(threshold=3.7, risk_measure="percentile", alpha=0.5),
-    ENB(threshold=1.2, risk_measure="percentile", alpha=0.5),
+    Omega(threshold=1.1, annual_hurdle_rate=0.0, risk_measure="percentile", alpha=0.5),
+    ENC(threshold=2.0, risk_measure="percentile", alpha=0.5),
+    ENB(threshold=1.35, risk_measure="percentile", alpha=0.5),
 ]

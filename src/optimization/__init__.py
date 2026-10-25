@@ -52,12 +52,12 @@ def optimize_portfolio(
     """
     t0 = time.time()
 
-    if verbose >= 1:
+    if verbose:
         print(f"\n{Fore.MAGENTA}Executing evolutionary algorithm...{Fore.LIGHTBLACK_EX}")
 
     seeds = seeds if seeds is not None else [1]
 
-    all_F, all_X = [], []
+    all_F, all_X, all_G = [], [], []
 
     # Execute NSGA-II optimization across independent random seeds
     for s in seeds:
@@ -97,6 +97,8 @@ def optimize_portfolio(
             )
 
         res = minimize(problem, algorithm, termination, seed=seed_int, verbose=bool(verbose), callback=callback)
+        if constraint_evaluator and res.pop is not None:
+            all_G.append(res.pop.get("G"))
 
         # Collect feasible non-dominated individuals from the final population
         if res.X is not None and len(res.X) > 0:
@@ -110,22 +112,31 @@ def optimize_portfolio(
                 all_F.append(np.atleast_2d(res.F)[feasible])
                 all_X.append(np.atleast_2d(res.X)[feasible])
             else:
-                if verbose >= 1:
+                if verbose:
                     print(
                         f"{Fore.YELLOW}Warning: no feasible solution found for seed {seed_int}.{Fore.RESET}"
                     )
 
     if not all_F:
+        if constraint_evaluator and all_G:
+            G_all = np.vstack(all_G)
+            best_idx = np.argmin(np.sum(np.maximum(0, G_all), axis=1))
+            unsatisfied = [j for j in range(len(constraint_evaluator.metrics)) if np.min(G_all[:, j]) > 1e-6] or [j for j in range(len(constraint_evaluator.metrics)) if G_all[best_idx, j] > 1e-6]
+            for j in unsatisfied:
+                m = constraint_evaluator.metrics[j]
+                g = np.min(G_all[:, j]) if np.min(G_all[:, j]) > 1e-6 else G_all[best_idx, j]
+                best_val = m.threshold + (-g if m.TO_MAXIMIZE else g) * (abs(m.threshold) or 1.0)
+                print(f"{Fore.YELLOW}Warning: constraint {m.__class__.__name__} not satisfied, best value: {best_val:.4f} (threshold: {m.threshold}){Fore.RESET}")
         return [], []
 
     # Aggregate solutions across all seeds and find best compromise (knee point)
     F_concat = np.vstack(all_F)
     X_concat = np.vstack(all_X)
 
-    F_concat, X_concat = constraints.remove_infeasible(F=F_concat, X=X_concat)
+    F_concat, X_concat = constraints.remove_infeasible(F=F_concat, X=X_concat, verbose=verbose)
     res, port = find_knee_point(F_concat, X_concat)
 
-    if verbose >= 1:
+    if verbose:
         print(f"{Fore.MAGENTA}Done!{Fore.RESET} ({time.time() - t0:.2f}s)")
 
     return port, res

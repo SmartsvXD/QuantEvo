@@ -1,4 +1,5 @@
 import argparse
+import datetime as dt
 import importlib
 import time
 from pathlib import Path
@@ -11,7 +12,13 @@ from src.metrics import MetricSuite
 from src.optimization import PortfolioConstraints, optimize_portfolio
 
 
-def benchmark(config_module: object = config, output: str = "output") -> None:
+def benchmark(
+    config_module: object = config,
+    output: str = "output",
+    max_windows: int | None = None,
+    end_date: str | dt.date | dt.datetime | pd.Timestamp | None = None,
+    verbose: bool = True,
+) -> tuple[list[dict], list[HistoricalDataset], list[HistoricalDataset], list[dict], list[dict], int]:
     """
     Executes walk-forward backtesting across rolling in-sample and out-of-sample windows.
 
@@ -20,6 +27,9 @@ def benchmark(config_module: object = config, output: str = "output") -> None:
 
     :param config_module: Configuration module specifying assets, constraints, and windows.
     :param output: Destination directory for exported CSV benchmark reports.
+    :param max_windows: Optional limit on the number of walk-forward windows to process.
+    :param end_date: Optional cutoff date for historical data. Drops all data subsequent to this date.
+    :param verbose: Flag to enable detailed console output during execution.
     """
     tickers = [x.get("name", "") for x in config_module.assets]
     upper = [x.get("upper", 1.0) for x in config_module.assets]
@@ -36,9 +46,17 @@ def benchmark(config_module: object = config, output: str = "output") -> None:
         in_sample_window=config_module.window_size,
         out_of_sample_window=config_module.window_size_out_of_sample,
         force_download=False,
-        verbose=True,
+        verbose=verbose,
+        end_date=end_date,
     )
     in_sample, out_of_sample, periods, n = stats.prepare_walk_forward_windows()
+
+    # Limit the number of walk-forward windows if n_max is specified with the most recent windows
+    if max_windows is not None:
+        n = min(n, max_windows)
+        in_sample = in_sample[-n:]
+        out_of_sample = out_of_sample[-n:]
+        periods = periods[-n:]
 
     obj_func = MetricSuite(config_module.objective_functions)
     constraints_evaluator = MetricSuite(config_module.constraints)
@@ -52,11 +70,13 @@ def benchmark(config_module: object = config, output: str = "output") -> None:
             random_state=config_module.random_state,
             n_bootstrap=config_module.stats_config.get("bootstrap_size", 100),
             block_length=config_module.stats_config.get("bootstrap_block_size", 20),
+            verbose=verbose,
         )
         out_of_sample[w].prepare_bootstrap(
             random_state=config_module.random_state,
             n_bootstrap=config_module.stats_config.get("bootstrap_size", 100),
             block_length=config_module.stats_config.get("bootstrap_block_size", 20),
+            verbose=verbose,
         )
 
         port, _ = optimize_portfolio(
@@ -76,10 +96,12 @@ def benchmark(config_module: object = config, output: str = "output") -> None:
             early_stopping_patience=config_module.optimization_config.get("early_stopping_patience", 10),
             estimate_ref_point=config_module.optimization_config.get("estimate_ref_point", True),
             hv_ref_point=config_module.optimization_config.get("hv_ref_point", None),
+            verbose=verbose,
         )
 
         if len(port) == 0:
-            print("No valid portfolio found.")
+            if verbose:
+                print("No valid portfolio found.")
 
             row = {"Window": w + 1}
             for i in range(len(tickers)):
@@ -97,21 +119,24 @@ def benchmark(config_module: object = config, output: str = "output") -> None:
                     }
                 )
         else:
-            print(
-                "\nOOS Window:",
-                w + 1,
-                f"(from {periods[w]['OutOfSampleStartDate']} to {periods[w]['OutOfSampleEndDate']})",
-            )
-            print()
+            if verbose:
+                print(
+                    "\nOOS Window:",
+                    w + 1,
+                    f"(from {periods[w]['OutOfSampleStartDate']} to {periods[w]['OutOfSampleEndDate']})",
+                )
+                print()
 
             row = {}
             row["Window"] = w + 1
             for i in range(len(tickers)):
-                print(f"{tickers[i]}: {port[i]:.1%}")
+                if verbose:
+                    print(f"{tickers[i]}: {port[i]:.1%}")
                 row[tickers[i]] = port[i]
             weights.append(row)
 
-            print()
+            if verbose:
+                print()
 
             for m in obj_func.metrics + constraints_evaluator.metrics:
                 is_m = m.calculate(port, in_sample[w], raw_scale=True, do_bootstrap=False)
@@ -127,16 +152,20 @@ def benchmark(config_module: object = config, output: str = "output") -> None:
                     }
                 )
 
-                print(f"{m.__class__.__name__} (In-Sample):     {is_m:.4f}")
-                print(f"{m.__class__.__name__} (Out-Of-Sample): {oos_m:.4f}")
-                print(f"{m.__class__.__name__} (Difference):    {oos_m - is_m:.4f}")
-                print()
+                if verbose:
+                    print(f"{m.__class__.__name__} (In-Sample):     {is_m:.4f}")
+                    print(f"{m.__class__.__name__} (Out-Of-Sample): {oos_m:.4f}")
+                    print(f"{m.__class__.__name__} (Difference):    {oos_m - is_m:.4f}")
+                    print()
 
             time.sleep(3)
 
     # Calculate summary statistics across all walk-forward windows
     weights.append(
-        {"Window": "Mean", **{tickers[i]: sum(weights[w][tickers[i]] for w in range(n)) / n for i in range(len(tickers))}}
+        {
+            "Window": "Mean",
+            **{tickers[i]: sum(weights[w][tickers[i]] for w in range(n)) / n for i in range(len(tickers))},
+        }
     )
 
     weights.append(
@@ -144,7 +173,11 @@ def benchmark(config_module: object = config, output: str = "output") -> None:
             "Window": "Standard Deviation",
             **{
                 tickers[i]: (
-                    sum((weights[w][tickers[i]] - sum(weights[w][tickers[i]] for w in range(n)) / n) ** 2 for w in range(n)) / n
+                    sum(
+                        (weights[w][tickers[i]] - sum(weights[w][tickers[i]] for w in range(n)) / n) ** 2
+                        for w in range(n)
+                    )
+                    / n
                 )
                 ** 0.5
                 for i in range(len(tickers))
@@ -164,6 +197,8 @@ def benchmark(config_module: object = config, output: str = "output") -> None:
     df = pd.DataFrame(weights)
     df.to_csv(f"./{output}/weights.csv", index=False)
 
+    return weights, in_sample, out_of_sample, periods, metrics, n
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Execute the benchmark.")
@@ -171,6 +206,13 @@ if __name__ == "__main__":
         "--config", type=str, default="config", help="Name of the configuration module (without .py extension)."
     )
     parser.add_argument("--output", type=str, default="output", help="Name of the output folder.")
+    parser.add_argument("--n_max", type=int, default=None, help="Maximum number of walk-forward windows to process.")
+    parser.add_argument(
+        "--end_date",
+        type=str,
+        default=None,
+        help="Optional cutoff date for historical data. Drops all data subsequent to this date.",
+    )
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -181,4 +223,4 @@ if __name__ == "__main__":
     else:
         config_module = importlib.import_module(args.config)
 
-    benchmark(config_module=config_module, output=args.output)
+    benchmark(config_module=config_module, output=args.output, max_windows=args.n_max, end_date=args.end_date)
