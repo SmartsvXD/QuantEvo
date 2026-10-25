@@ -1,4 +1,9 @@
 from src.constants import TRADING_DAYS_PER_YEAR
+from src.metrics.cagr import CAGR
+from src.metrics.cvar import CVaR
+from src.metrics.enb import ENB
+from src.metrics.enc import ENC
+from src.metrics.omega import Omega
 
 random_state = 42
 
@@ -27,14 +32,27 @@ optimization_config = {
 structural_constraints = {
     "minimum_percentage_per_asset": 0.05,
     "minimum_number_of_assets": 3,
-    "maximum_number_of_assets": 6,
+    "maximum_number_of_assets": 4,
 }
 
 # List of assets with their respective upper bounds for portfolio allocation
-assets = []
+assets = [
+    {"name": "VTI", "upper": 0.70},
+    {"name": "VEA", "upper": 0.50},
+    {"name": "VWO", "upper": 0.30},
+    {"name": "BND", "upper": 0.40},
+]
+
 
 # List of objective functions to be maximized during the optimization process
-objective_functions = []
+objective_functions = [
+    CAGR(),
+    CVaR(),
+]
 
 # List of constraints to be satisfied during the optimization process
-constraints = []
+constraints = [
+    Omega(threshold=1.1, annual_hurdle_rate=0.0, risk_measure="percentile", alpha=0.5),
+    ENC(threshold=2.0, risk_measure="percentile", alpha=0.5),
+    ENB(threshold=1.35, risk_measure="percentile", alpha=0.5),
+]

@@ -186,16 +186,17 @@ def benchmark(
     )
 
     # Export benchmark results to CSV files
-    Path(f"./{output}").mkdir(parents=True, exist_ok=True)
+    output_path = Path(output)
+    output_path.mkdir(parents=True, exist_ok=True)
 
     df = pd.DataFrame(metrics)
-    df.to_csv(f"./{output}/metrics.csv", index=False)
+    df.to_csv(output_path / "metrics.csv", index=False)
 
     df = pd.DataFrame(periods)
-    df.to_csv(f"./{output}/window_periods.csv", index=False)
+    df.to_csv(output_path / "window_periods.csv", index=False)
 
     df = pd.DataFrame(weights)
-    df.to_csv(f"./{output}/weights.csv", index=False)
+    df.to_csv(output_path / "weights.csv", index=False)
 
     return weights, in_sample, out_of_sample, periods, metrics, n
 

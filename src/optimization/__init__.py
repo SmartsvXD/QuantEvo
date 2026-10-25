@@ -96,7 +96,11 @@ def optimize_portfolio(
                 ref_point=hv_ref_point,
             )
 
-        res = minimize(problem, algorithm, termination, seed=seed_int, verbose=bool(verbose), callback=callback)
+        extra_kwargs = {}
+        if callback is not None:
+            extra_kwargs["callback"] = callback
+
+        res = minimize(problem, algorithm, termination, seed=seed_int, verbose=bool(verbose), **extra_kwargs)
         if constraint_evaluator and res.pop is not None:
             all_G.append(res.pop.get("G"))
 

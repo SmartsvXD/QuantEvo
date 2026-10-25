@@ -22,7 +22,7 @@ stats_config = {
 # Configuration for the optimization process
 optimization_config = {
     "pop_size": 300,
-    "n_gen": 50,
+    "n_gen": 500,
     "n_seeds": 10,
     "do_early_stopping": True,
     "early_stopping_patience": 10,
@@ -34,7 +34,7 @@ optimization_config = {
 structural_constraints = {
     "minimum_percentage_per_asset": 0.05,
     "minimum_number_of_assets": 3,
-    "maximum_number_of_assets": 5,
+    "maximum_number_of_assets": 4,
 }
 
 # List of assets with their respective upper bounds for portfolio allocation
