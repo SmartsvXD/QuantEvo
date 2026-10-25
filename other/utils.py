@@ -5,8 +5,6 @@ from matplotlib import pyplot as plt
 from matplotlib import ticker as mtick
 
 
-
-
 def compute_buy_and_hold(port, window_idx, out_of_sample, in_sample=None):
     if in_sample is not None:
         R_is = in_sample[window_idx].get(bootstrap=False)["returns"][0]
@@ -17,7 +15,6 @@ def compute_buy_and_hold(port, window_idx, out_of_sample, in_sample=None):
     asset_wealth = np.cumprod(1.0 + R, axis=1)
     portfolio_value = port @ asset_wealth
     return portfolio_value - 1.0
-
 
 
 def compute_rolling_cvar(port, cvar_metric, window_idx, out_of_sample, in_sample=None, rolling_window=63):
@@ -48,10 +45,9 @@ def display_and_save(
     metric,
     in_sample=None,
     rolling_window=63,
-    calendar_name="XNYS"
+    calendar_name="XNYS",
 ):
     calendar = xcals.get_calendar(calendar_name, start="1990-01-01")
-
 
     for w in range(n_windows):
         split_date = periods[w]["OutOfSampleStartDate"]
@@ -79,7 +75,12 @@ def display_and_save(
             ax_ret.plot(x_plot, y_gen_plot, label="Generated Portfolio", color="blue", linewidth=2)
 
             cvar_gen = compute_metric(
-                port.round(3), metric, window_idx=w, rolling_window=rolling_window, out_of_sample=out_of_sample, in_sample=in_sample
+                port.round(3),
+                metric,
+                window_idx=w,
+                rolling_window=rolling_window,
+                out_of_sample=out_of_sample,
+                in_sample=in_sample,
             )
             cvar_len = min(len(x_plot) - rolling_window + 1, len(cvar_gen))
             x_cvar = x_plot[rolling_window - 1 :][:cvar_len]
@@ -89,14 +90,21 @@ def display_and_save(
             x_plot = x
 
         for name, bench_weights in reference_portfolios.items():
-            y_bench = compute_buy_and_hold(bench_weights, out_of_sample=out_of_sample, in_sample=in_sample, window_idx=w)
+            y_bench = compute_buy_and_hold(
+                bench_weights, out_of_sample=out_of_sample, in_sample=in_sample, window_idx=w
+            )
             curr_len = min(len(x_plot), len(y_bench))
             ax_ret.plot(
                 x_plot[-curr_len:], y_bench[-curr_len:], label=name, color=reference_colors[name], linestyle="--"
             )
 
             cvar_bench = compute_metric(
-                bench_weights, metric, window_idx=w, rolling_window=rolling_window, out_of_sample=out_of_sample, in_sample=in_sample
+                bench_weights,
+                metric,
+                window_idx=w,
+                rolling_window=rolling_window,
+                out_of_sample=out_of_sample,
+                in_sample=in_sample,
             )
             curr_cvar_len = min(len(x_plot) - rolling_window + 1, len(cvar_bench))
             x_bench_cvar = x_plot[rolling_window - 1 :][:curr_cvar_len]
@@ -106,7 +114,14 @@ def display_and_save(
 
         if split_dt is not None:
             for ax in (ax_ret, ax_cvar):
-                ax.axvline(x=split_dt, color="black", linestyle=":", linewidth=1.5, alpha=0.8, label="IS / OOS Split" if ax == ax_ret else None)
+                ax.axvline(
+                    x=split_dt,
+                    color="black",
+                    linestyle=":",
+                    linewidth=1.5,
+                    alpha=0.8,
+                    label="IS / OOS Split" if ax == ax_ret else None,
+                )
                 ax.axvspan(x_plot[0], split_dt, color="gray", alpha=0.08)
                 ax.axvspan(split_dt, x_plot[-1], color="blue", alpha=0.03)
 
@@ -130,6 +145,7 @@ def display_and_save(
 
         fig.savefig(f"{output_dir}/images/window_{w + 1}_performance.png", dpi=300)
 
+
 def save_metrics(metrics, n_windows, config, reference_portfolios, in_sample, out_of_sample, output_dir):
     metrics_rp = []
 
@@ -141,7 +157,11 @@ def save_metrics(metrics, n_windows, config, reference_portfolios, in_sample, ou
                 "Metric": metrics[i]["Metric"],
                 "InSample": metrics[i]["InSample"],
                 "OutOfSample": metrics[i]["OutOfSample"],
-                "Difference": (metrics[i]["OutOfSample"] - metrics[i]["InSample"] if metrics[i]["InSample"] is not None or metrics[i]["OutOfSample"] is not None else None),
+                "Difference": (
+                    metrics[i]["OutOfSample"] - metrics[i]["InSample"]
+                    if metrics[i]["InSample"] is not None or metrics[i]["OutOfSample"] is not None
+                    else None
+                ),
             }
         )
 

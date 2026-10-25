@@ -1,9 +1,4 @@
 from src.constants import TRADING_DAYS_PER_YEAR
-from src.metrics.cagr import CAGR
-from src.metrics.cvar import CVaR
-from src.metrics.enb import ENB
-from src.metrics.enc import ENC
-from src.metrics.omega import Omega
 
 random_state = 42
 
@@ -36,26 +31,10 @@ structural_constraints = {
 }
 
 # List of assets with their respective upper bounds for portfolio allocation
-assets = [
-    {"name": "XDEV.MI", "upper": 0.2},
-    {"name": "SWDA.MI", "upper": 0.7},
-    {"name": "XXSC.MI", "upper": 0.2},
-    {"name": "XMME.MI", "upper": 0.2},
-    {"name": "XGLE.MI", "upper": 0.05},
-    {"name": "XDEQ.MI", "upper": 0.5},
-    {"name": "XEON.MI", "upper": 0.05},
-    {"name": "SGLD.MI", "upper": 0.05},
-]
+assets = []
 
 # List of objective functions to be maximized during the optimization process
-objective_functions = [
-    CAGR(),
-    CVaR(),
-]
+objective_functions = []
 
 # List of constraints to be satisfied during the optimization process
-constraints = [
-    Omega(threshold=1.25, annual_hurdle_rate=0.035, risk_measure="percentile", alpha=0.5),
-    ENC(threshold=3.7, risk_measure="percentile", alpha=0.5),
-    ENB(threshold=1.2, risk_measure="percentile", alpha=0.5),
-]
+constraints = []

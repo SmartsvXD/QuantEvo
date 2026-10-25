@@ -9,7 +9,7 @@ import yfinance as yf
 from colorama import Fore
 
 from src.constants import MINIMUM_VALID_DAYS
-from src.data.historical_data_expcetion import HistoricalDataException
+from src.data.historical_data_exception import HistoricalDataException
 
 
 def _download_yfinance(tickers: tuple, years: int) -> tuple[np.ndarray, pd.DatetimeIndex]:
@@ -96,7 +96,7 @@ def download(
 
     os.makedirs("./data", exist_ok=True)
 
-    cache_data_file = "./data/titoliDownload.data"
+    cache_data_file = "./data/tickersDownload.data"
     cache_info_file = "./data/infoDownload.data"
 
     # Check cache existence and validity
@@ -111,10 +111,10 @@ def download(
         with open(cache_info_file, "rb") as file:
             info = pk.load(file)
 
-        info_date = info.get("date", info.get("data"))
-        info_tickers = tuple(info.get("tickers", info.get("titoli", [])))
-        info_source = info.get("source", info.get("fonte"))
-        info_years = info.get("years", info.get("anni"))
+        info_date = info.get("date")
+        info_tickers = tuple(info.get("tickers", []))
+        info_source = info.get("source")
+        info_years = info.get("years")
 
         # Invalidate cache if older than one day or if parameters differ
         if (
