@@ -6,3 +6,4 @@ pymoo
 pandas
 scikit-learn
 exchange_calendars
+matplotlib

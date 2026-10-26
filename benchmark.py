@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pandas as pd
 
-import config
+from examples import example_a
 from src.data import HistoricalDataset
 from src.metrics import MetricSuite
 from src.optimization import PortfolioConstraints, optimize_portfolio
 
 
 def benchmark(
-    config_module: object = config,
+    config_module: object = example_a,
     output: str = "output",
     max_windows: int | None = None,
     end_date: str | dt.date | dt.datetime | pd.Timestamp | None = None,
@@ -72,12 +72,12 @@ def benchmark(
             block_length=config_module.stats_config.get("bootstrap_block_size", 20),
             verbose=verbose,
         )
-        out_of_sample[w].prepare_bootstrap(
-            random_state=config_module.random_state,
-            n_bootstrap=config_module.stats_config.get("bootstrap_size", 100),
-            block_length=config_module.stats_config.get("bootstrap_block_size", 20),
-            verbose=verbose,
-        )
+        # out_of_sample[w].prepare_bootstrap(
+        #     random_state=config_module.random_state,
+        #     n_bootstrap=config_module.stats_config.get("bootstrap_size", 100),
+        #     block_length=config_module.stats_config.get("bootstrap_block_size", 20),
+        #     verbose=verbose,
+        # )
 
         port, _ = optimize_portfolio(
             in_sample[w],
@@ -160,30 +160,31 @@ def benchmark(
 
             time.sleep(3)
 
-    # Calculate summary statistics across all walk-forward windows
-    weights.append(
-        {
-            "Window": "Mean",
-            **{tickers[i]: sum(weights[w][tickers[i]] for w in range(n)) / n for i in range(len(tickers))},
-        }
-    )
+    # Calculate summary statistics across feasible walk-forward windows
+    feasible_windows = [
+        w for w in range(n) if any(weights[w][tickers[i]] > 0.0 for i in range(len(tickers)))
+    ]
+    n_feas = len(feasible_windows)
 
-    weights.append(
-        {
-            "Window": "Standard Deviation",
-            **{
-                tickers[i]: (
-                    sum(
-                        (weights[w][tickers[i]] - sum(weights[w][tickers[i]] for w in range(n)) / n) ** 2
-                        for w in range(n)
-                    )
-                    / n
-                )
-                ** 0.5
-                for i in range(len(tickers))
-            },
+    if n_feas > 0:
+        mean_weights = {
+            tickers[i]: sum(weights[w][tickers[i]] for w in feasible_windows) / n_feas
+            for i in range(len(tickers))
         }
-    )
+        std_weights = {
+            tickers[i]: (
+                sum((weights[w][tickers[i]] - mean_weights[tickers[i]]) ** 2 for w in feasible_windows)
+                / n_feas
+            )
+            ** 0.5
+            for i in range(len(tickers))
+        }
+    else:
+        mean_weights = {tickers[i]: 0.0 for i in range(len(tickers))}
+        std_weights = {tickers[i]: 0.0 for i in range(len(tickers))}
+
+    weights.append({"Window": "Mean", **mean_weights})
+    weights.append({"Window": "Standard Deviation", **std_weights})
 
     # Export benchmark results to CSV files
     output_path = Path(output)
@@ -204,7 +205,7 @@ def benchmark(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Execute the benchmark.")
     parser.add_argument(
-        "--config", type=str, default="config", help="Name of the configuration module (without .py extension)."
+        "--config", type=str, default="examples/example_a.py", help="Name of the configuration module (without .py extension)."
     )
     parser.add_argument("--output", type=str, default="output", help="Name of the output folder.")
     parser.add_argument("--n_max", type=int, default=None, help="Maximum number of walk-forward windows to process.")

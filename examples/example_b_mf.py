@@ -49,7 +49,7 @@ assets = [
 ]
 
 
-# List of objective functions to be maximized during the optimization process
+# List of objective functions to be minimized during the optimization process
 objective_functions = [
     CVaR(),
     Drawdown(),
@@ -57,7 +57,7 @@ objective_functions = [
 
 # List of constraints to be satisfied during the optimization process
 constraints = [
-    ENC(threshold=3.9, risk_measure="percentile", alpha=0.5),
+    ENC(threshold=3.8, risk_measure="percentile", alpha=0.5),
     ENB(threshold=3.5, risk_measure="percentile", alpha=0.5),
-    CAGR(threshold=0.05, risk_measure="percentile", alpha=0.5),
+    CAGR(threshold=0.04, risk_measure="percentile", alpha=0.5),
 ]

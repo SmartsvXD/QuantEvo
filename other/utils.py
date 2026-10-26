@@ -9,12 +9,14 @@ def compute_buy_and_hold(port, window_idx, out_of_sample, in_sample=None):
     if in_sample is not None:
         R_is = in_sample[window_idx].get(bootstrap=False)["returns"][0]
         R_oos = out_of_sample[window_idx].get(bootstrap=False)["returns"][0]
-        R = np.concatenate([R_is, R_oos], axis=1)
+        y_is = port @ np.cumprod(1.0 + R_is, axis=1) - 1.0
+        # Reset at the split: out-of-sample restarts from 0 with initial weights (no drift)
+        y_oos = port @ np.cumprod(1.0 + R_oos, axis=1) - 1.0
+        return y_is, y_oos
     else:
-        R = out_of_sample[window_idx].get(bootstrap=False)["returns"][0]
-    asset_wealth = np.cumprod(1.0 + R, axis=1)
-    portfolio_value = port @ asset_wealth
-    return portfolio_value - 1.0
+        R_oos = out_of_sample[window_idx].get(bootstrap=False)["returns"][0]
+        y_oos = port @ np.cumprod(1.0 + R_oos, axis=1) - 1.0
+        return None, y_oos
 
 
 def compute_rolling_cvar(port, cvar_metric, window_idx, out_of_sample, in_sample=None, rolling_window=63):
@@ -55,12 +57,16 @@ def display_and_save(
 
         if in_sample is not None and "InSampleStartDate" in periods[w]:
             start_date = periods[w]["InSampleStartDate"]
-            x = calendar.sessions_in_range(start_date, end_date).tz_localize(None)
             split_dt = pd.to_datetime(split_date)
+            x_is = calendar.sessions_in_range(start_date, periods[w]["InSampleEndDate"]).tz_localize(None)
+            x_oos = calendar.sessions_in_range(split_date, end_date).tz_localize(None)
+            x_all = pd.DatetimeIndex(np.concatenate([x_is, x_oos]))
         else:
             start_date = split_date
-            x = calendar.sessions_in_range(start_date, end_date).tz_localize(None)
             split_dt = None
+            x_is = None
+            x_oos = calendar.sessions_in_range(start_date, end_date).tz_localize(None)
+            x_all = x_oos
 
         port = np.array([weights[w][k] for k in weights[w] if k != "Window"])
         total_weight = port.sum()
@@ -68,34 +74,47 @@ def display_and_save(
         fig, (ax_ret, ax_cvar) = plt.subplots(2, 1, figsize=(11, 7), sharex=True, gridspec_kw={"height_ratios": [2, 1]})
 
         if total_weight > 0:
-            y_gen = compute_buy_and_hold(port.round(3), out_of_sample=out_of_sample, in_sample=in_sample, window_idx=w)
-            min_len = min(len(x), len(y_gen))
-            x_plot = x[-min_len:]
-            y_gen_plot = y_gen[-min_len:]
-            ax_ret.plot(x_plot, y_gen_plot, label="Generated Portfolio", color="blue", linewidth=2)
+            y_gen_is, y_gen_oos = compute_buy_and_hold(port, out_of_sample=out_of_sample, in_sample=in_sample, window_idx=w)
+            if y_gen_is is not None:
+                min_is = min(len(x_is), len(y_gen_is))
+                ax_ret.plot(x_is[-min_is:], y_gen_is[-min_is:], label="Generated Portfolio", color="blue", linewidth=2)
+            min_oos = min(len(x_oos), len(y_gen_oos))
+            ax_ret.plot(
+                x_oos[-min_oos:],
+                y_gen_oos[-min_oos:],
+                label="Generated Portfolio" if y_gen_is is None else None,
+                color="blue",
+                linewidth=2,
+            )
 
             cvar_gen = compute_metric(
-                port.round(3),
+                port,
                 metric,
                 window_idx=w,
                 rolling_window=rolling_window,
                 out_of_sample=out_of_sample,
                 in_sample=in_sample,
             )
-            cvar_len = min(len(x_plot) - rolling_window + 1, len(cvar_gen))
-            x_cvar = x_plot[rolling_window - 1 :][:cvar_len]
+            cvar_len = min(len(x_all) - rolling_window + 1, len(cvar_gen))
+            x_cvar = x_all[rolling_window - 1 :][:cvar_len]
             ax_cvar.plot(x_cvar, cvar_gen[:cvar_len], label="Generated Portfolio", color="blue", linewidth=2)
-        else:
-            min_len = len(x)
-            x_plot = x
 
         for name, bench_weights in reference_portfolios.items():
-            y_bench = compute_buy_and_hold(
+            y_bench_is, y_bench_oos = compute_buy_and_hold(
                 bench_weights, out_of_sample=out_of_sample, in_sample=in_sample, window_idx=w
             )
-            curr_len = min(len(x_plot), len(y_bench))
+            if y_bench_is is not None:
+                curr_is = min(len(x_is), len(y_bench_is))
+                ax_ret.plot(
+                    x_is[-curr_is:], y_bench_is[-curr_is:], label=name, color=reference_colors[name], linestyle="--"
+                )
+            curr_oos = min(len(x_oos), len(y_bench_oos))
             ax_ret.plot(
-                x_plot[-curr_len:], y_bench[-curr_len:], label=name, color=reference_colors[name], linestyle="--"
+                x_oos[-curr_oos:],
+                y_bench_oos[-curr_oos:],
+                label=name if y_bench_is is None else None,
+                color=reference_colors[name],
+                linestyle="--",
             )
 
             cvar_bench = compute_metric(
@@ -106,8 +125,8 @@ def display_and_save(
                 out_of_sample=out_of_sample,
                 in_sample=in_sample,
             )
-            curr_cvar_len = min(len(x_plot) - rolling_window + 1, len(cvar_bench))
-            x_bench_cvar = x_plot[rolling_window - 1 :][:curr_cvar_len]
+            curr_cvar_len = min(len(x_all) - rolling_window + 1, len(cvar_bench))
+            x_bench_cvar = x_all[rolling_window - 1 :][:curr_cvar_len]
             ax_cvar.plot(
                 x_bench_cvar, cvar_bench[:curr_cvar_len], label=name, color=reference_colors[name], linestyle="--"
             )
@@ -122,14 +141,16 @@ def display_and_save(
                     alpha=0.8,
                     label="IS / OOS Split" if ax == ax_ret else None,
                 )
-                ax.axvspan(x_plot[0], split_dt, color="gray", alpha=0.08)
-                ax.axvspan(split_dt, x_plot[-1], color="blue", alpha=0.03)
+                ax.axvspan(x_all[0], split_dt, color="gray", alpha=0.08)
+                ax.axvspan(split_dt, x_all[-1], color="blue", alpha=0.03)
+
+        ax_ret.axhline(0.0, color="black", linestyle="-", linewidth=0.8, alpha=0.3)
 
         ax_ret.yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1.0, decimals=1))
         if split_dt is not None:
-            title_text = f"Window {w + 1} Performance: In-Sample ({start_date} to {periods[w]['InSampleEndDate']}) vs Out-of-Sample ({split_date} to {end_date})"
+            title_text = f"Window {w + 1}: In-Sample ({start_date}/{periods[w]['InSampleEndDate']}), Out-of-Sample ({split_date}/{end_date})"
         else:
-            title_text = f"Window {w + 1} Out-of-Sample Performance ({start_date} to {end_date})"
+            title_text = f"Window {w + 1} Out-of-Sample ({start_date}/{end_date})"
         ax_ret.set_title(title_text, fontsize=12, fontweight="bold")
         ax_ret.set_ylabel("Cumulative Return")
         ax_ret.grid(True, linestyle="--", alpha=0.5)
@@ -149,6 +170,10 @@ def display_and_save(
 def save_metrics(metrics, n_windows, config, reference_portfolios, in_sample, out_of_sample, output_dir):
     metrics_rp = []
 
+    feasible_windows = {
+        m["Window"] for m in metrics if m.get("OutOfSample") is not None
+    }
+
     for i in range(len(metrics)):
         metrics_rp.append(
             {
@@ -166,10 +191,17 @@ def save_metrics(metrics, n_windows, config, reference_portfolios, in_sample, ou
         )
 
     for w in range(n_windows):
+        is_feasible = (w + 1) in feasible_windows
         for reference_name, reference_perc in reference_portfolios.items():
             for func in config.objective_functions + config.constraints:
-                is_value = func.calculate(reference_perc, in_sample[w], raw_scale=True, do_bootstrap=False)
-                oos_value = func.calculate(reference_perc, out_of_sample[w], raw_scale=True, do_bootstrap=False)
+                if is_feasible:
+                    is_value = func.calculate(reference_perc, in_sample[w], raw_scale=True, do_bootstrap=False)
+                    oos_value = func.calculate(reference_perc, out_of_sample[w], raw_scale=True, do_bootstrap=False)
+                    diff = oos_value - is_value
+                else:
+                    is_value = None
+                    oos_value = None
+                    diff = None
 
                 metrics_rp.append(
                     {
@@ -178,7 +210,7 @@ def save_metrics(metrics, n_windows, config, reference_portfolios, in_sample, ou
                         "Metric": func.__class__.__name__,
                         "InSample": is_value,
                         "OutOfSample": oos_value,
-                        "Difference": oos_value - is_value,
+                        "Difference": diff,
                     }
                 )
 
@@ -186,4 +218,10 @@ def save_metrics(metrics, n_windows, config, reference_portfolios, in_sample, ou
         print(pd.DataFrame(m for m in metrics_rp if m["Window"] == w + 1))
         print("\n")
 
-    pd.DataFrame(metrics_rp).to_csv(f"{output_dir}/metrics_comparison.csv", index=False)
+    df_rp = pd.DataFrame(metrics_rp)
+    df_rp.to_csv(f"{output_dir}/metrics_comparison.csv", index=False)
+
+    print("\nSummary Out-Of-Sample Mean across Feasible Windows:")
+    summary_df = df_rp.dropna(subset=["OutOfSample"]).groupby(["Portfolio", "Metric"])["OutOfSample"].mean().unstack()
+    print(summary_df)
+    print("\n")

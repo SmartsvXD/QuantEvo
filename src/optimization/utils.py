@@ -31,7 +31,7 @@ def find_knee_point(F: np.ndarray, X: np.ndarray) -> tuple[np.ndarray, np.ndarra
 
     n_points, n_obj = F_pareto.shape
     if n_points <= n_obj:
-        # If non-dominated points are insufficient, fallback to first point or direct TOPSIS
+        # If non-dominated points are insufficient, fallback to first point
         if n_points == 0:
             return [], []
         return F_pareto[0], X_pareto[0]
@@ -81,7 +81,7 @@ def find_knee_point(F: np.ndarray, X: np.ndarray) -> tuple[np.ndarray, np.ndarra
             distances = np.abs(np.dot(F_norm - p1, unit_normal))
             knee_idx = int(np.argmax(distances))
 
-    # Fallback TOPSIS (minimum Euclidean distance from ideal origin [0, 0, ...])
+    # Fallback: minimum Euclidean distance from ideal utopia origin [0, 0, ...]
     if knee_idx is None:
         knee_idx = int(np.argmin(np.linalg.norm(F_norm, axis=1)))
 

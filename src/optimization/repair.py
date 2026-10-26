@@ -328,8 +328,8 @@ class PortfolioConstraints:
 
     def remove_infeasible(
         self,
-        X: np.ndarray,
         F: np.ndarray,
+        X: np.ndarray,
         sum_tol: float = 1e-8,
         zero_tol: float = 1e-12,
         verbose: bool = True,
@@ -337,8 +337,8 @@ class PortfolioConstraints:
         """
         Filters out solutions that violate budget, bound, or cardinality constraints.
 
-        :param X: Decision variables array (portfolio weights) of shape (P, N).
         :param F: Objective function values array of shape (P, M).
+        :param X: Decision variables array (portfolio weights) of shape (P, N).
         :param sum_tol: Tolerance for budget constraint (|sum(w) - 1| <= sum_tol).
         :param zero_tol: Tolerance for non-negativity and boundary checks.
         :param verbose: If True, prints the number of discarded solutions.

@@ -6,14 +6,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import config
+from examples import example_a
 from src.data import HistoricalDataset, SampleStatistics
 from src.metrics import MetricSuite
 from src.optimization import PortfolioConstraints, optimize_portfolio
 
 
 def main(
-    config_module: object = config,
+    config_module: object = example_a,
     end_date: str | dt.date | dt.datetime | pd.Timestamp | None = None,
     verbose: bool = True,
 ) -> tuple[np.ndarray, HistoricalDataset, SampleStatistics]:
@@ -91,7 +91,7 @@ def main(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Execute the optimization.")
     parser.add_argument(
-        "--config", type=str, default="config", help="Name of the configuration module (without .py extension)."
+        "--config", type=str, default="examples/example_a.py", help="Name of the configuration module (without .py extension)."
     )
     parser.add_argument("--end-date", type=str, default=None, help="Optional cutoff date for historical data.")
     args = parser.parse_args()

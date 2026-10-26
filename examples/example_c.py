@@ -49,7 +49,7 @@ assets = [
     {"name": "SGLD.MI", "upper": 0.05},
 ]
 
-# List of objective functions to be maximized during the optimization process
+# List of objective functions to be minimized during the optimization process
 objective_functions = [
     CAGR(),
     CVaR(),
