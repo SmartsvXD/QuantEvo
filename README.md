@@ -6,16 +6,16 @@
 
 ## 🎯 1. Overview and Motivation
 
-Classic mean-variance optimization (Markowitz, 1952) assumes Gaussian returns, perfectly known parameters, and continuous convex constraints. In practice, financial returns have heavy tails and volatility clustering, while realistic allocations require cardinality limits ($k_{\min} \le |w|_0 \le k_{\max}$) and semi-continuous thresholds ($w_i \ge w_{\min}$ or $w_i = 0$) that make exact solving NP-hard.
+Classic mean-variance optimization (Markowitz, 1952) assumes Gaussian returns, perfectly known parameters, and continuous convex constraints. In practice, financial returns have heavy tails and volatility clustering, while realistic allocations require cardinality limits ($k_{\min} \le \|w\| \le k_{max}  $) and semi-continuous thresholds ($w_i \ge w_{\min}$ or $w_i = 0$) that make exact solving NP-hard.
 
 QuantEvo combines genetic optimization with non-parametric risk modeling:
 * **Heuristic repair (bisection water-filling)**: Projects candidate weights onto the constrained simplex in $\mathcal{O}(k \log(1/\epsilon))$ iterations without soft penalty tuning.
-* **Moving Block Bootstrap**: Resamples overlapping 20-day return blocks to keep empirical autocorrelation and volatility clustering intact.
+* **Moving Block Bootstrap**: Resamples overlapping return blocks to keep empirical autocorrelation and volatility clustering intact.
 * **Meucci's Effective Number of Bets (ENB)**: Decomposes portfolio variance via PCA into orthogonal factors and tracks entropy to detect true factor concentration.
 * **Ledoit-Wolf shrinkage**: Conditions bootstrap covariance matrices against numerical singularity.
 * **NSGA-II multi-objective GA**: Explores Pareto trade-offs (e.g. CVaR vs. Drawdown or CAGR) with Hypervolume early stopping and knee-point selection.
 * **Numba parallel JIT**: Compiles bootstrap evaluations and constraint projections down to multi-threaded machine code.
-* **Rolling walk-forward framework**: Backtests 11 distinct rolling windows (3-year in-sample, 2-year out-of-sample) spanning 2001 to 2026.
+* **Rolling walk-forward framework**
 
 ---
 
