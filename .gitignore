@@ -3,5 +3,4 @@ __pycache__
 *.data
 *.txt
 .venv
-*.csv
-*.png
+output

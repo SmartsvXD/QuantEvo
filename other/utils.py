@@ -20,18 +20,24 @@ def compute_buy_and_hold(port, window_idx, out_of_sample, in_sample=None):
 
 
 def compute_rolling_cvar(port, cvar_metric, window_idx, out_of_sample, in_sample=None, rolling_window=63):
+    def _rolling_for_matrix(r_mat):
+        vals = []
+        for t in range(rolling_window, r_mat.shape[1] + 1):
+            r_slice = np.expand_dims(r_mat[:, t - rolling_window : t], axis=0)
+            val = cvar_metric._calculate(port, tensors={"returns": r_slice})[0, 0]
+            vals.append(val)
+        return np.array(vals)
+
     if in_sample is not None:
         R_is = in_sample[window_idx].get(bootstrap=False)["returns"][0]
         R_oos = out_of_sample[window_idx].get(bootstrap=False)["returns"][0]
-        R = np.concatenate([R_is, R_oos], axis=1)
+        cvar_is = _rolling_for_matrix(R_is)
+        cvar_oos = _rolling_for_matrix(R_oos)
+        return cvar_is, cvar_oos
     else:
-        R = out_of_sample[window_idx].get(bootstrap=False)["returns"][0]
-    cvar_values = []
-    for t in range(rolling_window, R.shape[1] + 1):
-        r_slice = np.expand_dims(R[:, t - rolling_window : t], axis=0)
-        val = cvar_metric._calculate(port, tensors={"returns": r_slice})[0, 0]
-        cvar_values.append(val)
-    return np.array(cvar_values)
+        R_oos = out_of_sample[window_idx].get(bootstrap=False)["returns"][0]
+        cvar_oos = _rolling_for_matrix(R_oos)
+        return None, cvar_oos
 
 
 def display_and_save(
@@ -87,7 +93,7 @@ def display_and_save(
                 linewidth=2,
             )
 
-            cvar_gen = compute_metric(
+            cvar_gen_is, cvar_gen_oos = compute_metric(
                 port,
                 metric,
                 window_idx=w,
@@ -95,9 +101,20 @@ def display_and_save(
                 out_of_sample=out_of_sample,
                 in_sample=in_sample,
             )
-            cvar_len = min(len(x_all) - rolling_window + 1, len(cvar_gen))
-            x_cvar = x_all[rolling_window - 1 :][:cvar_len]
-            ax_cvar.plot(x_cvar, cvar_gen[:cvar_len], label="Generated Portfolio", color="blue", linewidth=2)
+            if cvar_gen_is is not None and len(cvar_gen_is) > 0:
+                cvar_is_len = min(len(x_is) - rolling_window + 1, len(cvar_gen_is))
+                x_cvar_is = x_is[rolling_window - 1 :][:cvar_is_len]
+                ax_cvar.plot(x_cvar_is, cvar_gen_is[:cvar_is_len], label="Generated Portfolio", color="blue", linewidth=2)
+            if len(cvar_gen_oos) > 0:
+                cvar_oos_len = min(len(x_oos) - rolling_window + 1, len(cvar_gen_oos))
+                x_cvar_oos = x_oos[rolling_window - 1 :][:cvar_oos_len]
+                ax_cvar.plot(
+                    x_cvar_oos,
+                    cvar_gen_oos[:cvar_oos_len],
+                    label="Generated Portfolio" if cvar_gen_is is None or len(cvar_gen_is) == 0 else None,
+                    color="blue",
+                    linewidth=2,
+                )
 
         for name, bench_weights in reference_portfolios.items():
             y_bench_is, y_bench_oos = compute_buy_and_hold(
@@ -117,7 +134,7 @@ def display_and_save(
                 linestyle="--",
             )
 
-            cvar_bench = compute_metric(
+            cvar_bench_is, cvar_bench_oos = compute_metric(
                 bench_weights,
                 metric,
                 window_idx=w,
@@ -125,11 +142,26 @@ def display_and_save(
                 out_of_sample=out_of_sample,
                 in_sample=in_sample,
             )
-            curr_cvar_len = min(len(x_all) - rolling_window + 1, len(cvar_bench))
-            x_bench_cvar = x_all[rolling_window - 1 :][:curr_cvar_len]
-            ax_cvar.plot(
-                x_bench_cvar, cvar_bench[:curr_cvar_len], label=name, color=reference_colors[name], linestyle="--"
-            )
+            if cvar_bench_is is not None and len(cvar_bench_is) > 0:
+                curr_cvar_is_len = min(len(x_is) - rolling_window + 1, len(cvar_bench_is))
+                x_bench_cvar_is = x_is[rolling_window - 1 :][:curr_cvar_is_len]
+                ax_cvar.plot(
+                    x_bench_cvar_is,
+                    cvar_bench_is[:curr_cvar_is_len],
+                    label=name,
+                    color=reference_colors[name],
+                    linestyle="--",
+                )
+            if len(cvar_bench_oos) > 0:
+                curr_cvar_oos_len = min(len(x_oos) - rolling_window + 1, len(cvar_bench_oos))
+                x_bench_cvar_oos = x_oos[rolling_window - 1 :][:curr_cvar_oos_len]
+                ax_cvar.plot(
+                    x_bench_cvar_oos,
+                    cvar_bench_oos[:curr_cvar_oos_len],
+                    label=name if cvar_bench_is is None or len(cvar_bench_is) == 0 else None,
+                    color=reference_colors[name],
+                    linestyle="--",
+                )
 
         if split_dt is not None:
             for ax in (ax_ret, ax_cvar):

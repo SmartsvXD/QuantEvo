@@ -9,7 +9,7 @@
 Mean-variance optimization (Markowitz, 1952) is the classical foundation of portfolio theory. However, its core assumptions fail on empirical financial time series:
 1. **Non-Gaussian returns**: Asset returns exhibit fat tails, negative skewness, and volatility clustering, which variance penalizes symmetrically.
 2. **Factor concentration vs. nominal diversification**: A portfolio with uniform capital allocation ($w_i = 1/N$) can remain heavily concentrated in a single systematic risk factor.
-3. **Operational MINLP constraints**: Cardinality limits ($k_{\min} \le \|w\|_0 \le k_{\max}$) and semi-continuous bounds ($w_i \ge w_{\min}$ or $w_i = 0$) break convexity and make exact solving NP-hard.
+3. **Operational MINLP constraints**: Cardinality limits ($k_{\min} \le |w|_0 \le k_{\max}$) and semi-continuous bounds ($w_i \ge w_{\min}$ or $w_i = 0$) break convexity and make exact solving NP-hard.
 
 QuantEvo addresses these limitations through an integrated framework:
 * Heuristic repair with continuous projection (bisection water-filling) to enforce MINLP constraints without soft penalties.

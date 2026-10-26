@@ -130,7 +130,10 @@ In anticipation of policy rate tightening, the optimizer reduced portfolio durat
 
 ### 2.5 Infeasibility in Windows 10 and 11: Feasible Space Analysis
 In Windows 10 (IS 2019 to 2022) and 11 (IS 2021 to 2024), Experiment B identified no candidate solution satisfying the joint constraint set:
-$$\mathcal{F} = \left\{ w \in \Delta^{N-1} \;\middle|\; \text{CAGR}(w) \ge 5.0\%, \; \text{ENB}(w) \ge 3.5, \; \text{ENC}(w) \ge 3.9, \; k_{\min} \le \|w\|_0 \le k_{\max} \right\} = \emptyset$$
+
+$$
+\mathcal{F} = \left\{ w \in \Delta^{N-1} \;\middle|\; \text{CAGR}(w) \ge 5.0\%, \; \text{ENB}(w) \ge 3.5, \; \text{ENC}(w) \ge 3.9, \; k_{\min} \le \|w\|_0 \le k_{\max} \right\} = \emptyset
+$$
 
 The 2022 global monetary tightening caused simultaneous contractions in equity and fixed-income assets, temporarily eliminating the negative stock-bond correlation. Under these empirical returns, achieving $\text{CAGR} \ge 5.0\%$ required concentrating capital in select outperforming equities, which mutually excluded the minimum factor diversification ($\text{ENB} \ge 3.5$) and constituent count ($\text{ENC} \ge 3.9$) bounds. Consequently, the hard constraints over-constrained the problem, yielding an empty feasible set $\mathcal{F} = \emptyset$.
 
