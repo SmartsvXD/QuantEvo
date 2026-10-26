@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Simone Vinciguerra
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import datetime as dt
 import os
 import pickle as pk

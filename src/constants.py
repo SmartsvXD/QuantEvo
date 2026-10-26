@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Simone Vinciguerra
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 PROGRESS_BAR_TICKS = 30
 
 DEBUG_METRICS = False

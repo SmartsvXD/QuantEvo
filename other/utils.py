@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Simone Vinciguerra
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import exchange_calendars as xcals
 import numpy as np
 import pandas as pd

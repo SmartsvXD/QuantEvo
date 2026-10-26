@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Simone Vinciguerra
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import numpy as np
 
 from src.constants import TRADING_DAYS_PER_YEAR
