@@ -5,3 +5,4 @@ scipy
 pymoo
 pandas
 scikit-learn
+exchange_calendars
