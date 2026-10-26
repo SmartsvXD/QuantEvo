@@ -1,66 +1,63 @@
 # 📈 QuantEvo
 
-> **Disclaimer**: This is a personal project created for educational and self-study purposes. It is not financial or investment advice. The backtests do not model transaction fees, slippage, or liquidity constraints. If you use this code for real trading, you do so at your own risk.
+> **Note**: This is an educational personal project. It does not provide financial or investment advice. Backtests omit trading fees, slippage, and market impact.
 
 ---
 
 ## 🎯 1. Overview and Motivation
 
-Mean-variance optimization (Markowitz, 1952) is the classical foundation of portfolio theory. However, its core assumptions fail on empirical financial time series:
-1. **Non-Gaussian returns**: Asset returns exhibit fat tails, negative skewness, and volatility clustering, which variance penalizes symmetrically.
-2. **Factor concentration vs. nominal diversification**: A portfolio with uniform capital allocation ($w_i = 1/N$) can remain heavily concentrated in a single systematic risk factor.
-3. **Operational MINLP constraints**: Cardinality limits ($k_{\min} \le |w|_0 \le k_{\max}$) and semi-continuous bounds ($w_i \ge w_{\min}$ or $w_i = 0$) break convexity and make exact solving NP-hard.
+Classic mean-variance optimization (Markowitz, 1952) assumes Gaussian returns, perfectly known parameters, and continuous convex constraints. In practice, financial returns have heavy tails and volatility clustering, while realistic allocations require cardinality limits ($k_{\min} \le |w|_0 \le k_{\max}$) and semi-continuous thresholds ($w_i \ge w_{\min}$ or $w_i = 0$) that make exact solving NP-hard.
 
-QuantEvo addresses these limitations through an integrated framework:
-* Heuristic repair with continuous projection (bisection water-filling) to enforce MINLP constraints without soft penalties.
-* Moving Block Bootstrap to preserve empirical autocorrelation and volatility clustering.
-* Meucci's Effective Number of Bets (ENB) via spectral PCA decomposition and Shannon entropy.
-* Ledoit-Wolf shrinkage re-estimated on every individual bootstrap path for covariance conditioning.
-* Multi-objective genetic optimization (NSGA-II) with Hypervolume early stopping and knee-point selection.
-* Parallel Numba JIT acceleration for multi-core execution.
-* Rolling walk-forward validation (3 years in-sample, 2 years out-of-sample) spanning 25 years (2001 to 2026).
+QuantEvo combines genetic optimization with non-parametric risk modeling:
+* **Heuristic repair (bisection water-filling)**: Projects candidate weights onto the constrained simplex in $\mathcal{O}(k \log(1/\epsilon))$ iterations without soft penalty tuning.
+* **Moving Block Bootstrap**: Resamples overlapping 20-day return blocks to keep empirical autocorrelation and volatility clustering intact.
+* **Meucci's Effective Number of Bets (ENB)**: Decomposes portfolio variance via PCA into orthogonal factors and tracks entropy to detect true factor concentration.
+* **Ledoit-Wolf shrinkage**: Conditions bootstrap covariance matrices against numerical singularity.
+* **NSGA-II multi-objective GA**: Explores Pareto trade-offs (e.g. CVaR vs. Drawdown or CAGR) with Hypervolume early stopping and knee-point selection.
+* **Numba parallel JIT**: Compiles bootstrap evaluations and constraint projections down to multi-threaded machine code.
+* **Rolling walk-forward framework**: Backtests 11 distinct rolling windows (3-year in-sample, 2-year out-of-sample) spanning 2001 to 2026.
 
 ---
 
-## 📊 2. Walk-Forward Backtest Results
+## 📊 2. Walk-Forward Backtest Examples
 
-QuantEvo is evaluated using an 11-window rolling walk-forward backtest over 25 years (July 2001 to July 2026). Each window uses 3 years of in-sample data for optimization and 2 years of out-of-sample data for testing, without lookahead bias.
+To evaluate how the algorithm handles real market regimes, QuantEvo executes a rolling walk-forward backtest over 25 years (July 2001 to July 2026, 11 windows of 3-year in-sample / 2-year out-of-sample).
 
-To obtain 25 years of daily data, the backtest uses historical Vanguard mutual funds tracking core asset classes (`VTSMX`, `VTMGX`, `VEIEX`, `VBMFX`, `VUSTX`, `VGSIX`, `VFISX`).
+To avoid synthetic splicing across 25 years, the backtest uses historical Vanguard index mutual funds (`VTSMX`, `VTMGX`, `VEIEX`, `VBMFX`, `VUSTX`, `VGSIX`, `VFISX`).
 
-### 2.1 Experiment B: 7-Asset Defensive ("No-Fall") Strategy
-The optimizer was configured to minimize daily CVaR (95%) and Maximum Drawdown, subject to:
-* Annualized return: $\text{CAGR} \ge 5.0\%$
-* Factor diversification: $\text{ENB} \ge 3.5$
-* Asset diversification: $\text{ENC} \ge 3.9$
-* Minimum asset allocation: 5% (cardinality: between 3 and 6 assets).
+### 2.1 Example B: 7-Asset Defensive ("No-Fall") Strategy
+The optimizer is configured to minimize daily CVaR (95%) and Maximum Drawdown, subject to:
+* $\text{CAGR} \ge 4.0\%$
+* $\text{ENB} \ge 3.5$
+* $\text{ENC} \ge 3.8$
+* Position size $\ge 5\%$, cardinality between 3 and 6 assets.
 
 #### Out-of-Sample Performance Comparison (Feasible Windows 1 to 9, 2004 to 2022)
 
 | Portfolio Strategy | Mean CAGR | Mean Daily CVaR (95%) | Mean Max Drawdown | Mean ENB | Mean ENC |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **QuantEvo (Generated)** | **4.34%** | **0.0065** | **6.22%** | **3.43** | **3.90** |
+| **QuantEvo (Generated)** | **4.31%** | **0.0060** | **5.80%** | **3.60** | **3.80** |
 | World Equity 20% Conservative | 4.49% | 0.0059 | 6.36% | 4.39 | 1.52 |
 | Balanced 40/60 (Long Treasury) | 7.07% | 0.0116 | 10.28% | 3.30 | 2.17 |
 | Static Risk Parity Proxy | 6.45% | 0.0131 | 11.36% | 2.17 | 4.35 |
-| Naive Equal Weight | 6.40% | 0.0147 | 13.67% | 1.47 | 6.99 |
+| Naive Equal Weight | 6.39% | 0.0147 | 13.72% | 1.47 | 7.00 |
 | Equal Weight Core | 6.62% | 0.0155 | 13.48% | 1.65 | 5.00 |
 
-*\*Note on benchmark comparison*: All strategies are evaluated over the identical 9 feasible windows (July 2004 to July 2022). In Windows 10 and 11, the joint optimization constraints (CAGR $\ge$ 5.0%, ENB $\ge$ 3.5, ENC $\ge$ 3.9) yielded an empty feasible set during the 2022 rate shock. Consequently, both QuantEvo and all reference portfolios are evaluated exclusively across the 9 feasible windows to ensure an identical evaluation period. Detailed window evaluations and benchmark definitions are in [EXPERIMENTS.md](./EXPERIMENTS.md).
+*\*Note on benchmark comparison*: All strategies are evaluated over the identical 9 feasible windows (July 2004 to July 2022). In Windows 10 and 11, the joint optimization constraints (CAGR $\ge$ 4.0%, ENB $\ge$ 3.5, ENC $\ge$ 3.8) yielded an empty feasible set during the 2022 rate shock. Consequently, both QuantEvo and all reference portfolios are evaluated exclusively across the 9 feasible windows to ensure an identical evaluation period. Detailed window evaluations and benchmark definitions are illustrated in [EXPERIMENTS.md](./EXPERIMENTS.md).
 
 #### Main Observations:
-1. **Risk profile and asset allocation**: QuantEvo exhibits a defensive risk profile (average drawdown of 6.22% and CVaR of 0.0065), driven by substantial allocations to fixed income and short-term Treasuries (~78% across feasible windows). This risk-return profile closely aligns with the World Equity 20% Conservative benchmark (6.36% drawdown, 0.0059 CVaR, 4.49% CAGR).
-2. **Constituent vs. factor diversification**: While World Equity 20% achieves its defensive profile by concentrating primarily in a single aggregate bond fund ($\text{ENC} = 1.52$), QuantEvo distributes capital across multiple asset classes ($\text{ENC} = 3.90$, $\text{ENB} = 3.43$). In contrast, while Naive Equal Weight allocates equally across all 7 assets ($\text{ENC} \approx 7.0$), its Meucci ENB drops to 1.47 due to shared equity and credit factor risk.
-3. **2008 Financial Crisis**: During the 2008 liquidation (Window 3, July 2008 to July 2010), defensive allocations to US Treasuries contained QuantEvo's maximum drawdown to 11.23%, compared to 28.50% for Naive Equal Weight and 23.48% for the Static Risk Parity Proxy.
+1. **Risk profile and trade-offs vs. World Equity 20%**: QuantEvo matches the defensive profile of World Equity 20% Conservative (5.80% vs 6.36% drawdown, 0.0060 vs 0.0059 CVaR), but delivers slightly lower return (4.31% vs 4.49%) and lower factor diversification ($\text{ENB} = 3.60$ vs $4.39$). This gap stems from enforcing multi-asset nominal dispersion ($\text{ENC} \ge 3.8$ vs $1.52$), which bars concentrating capital in a single aggregate bond instrument.
+2. **Constituent vs. factor diversification**: While nominal equal weighting maximizes constituent spread ($\text{ENC} = 7.00$), its factor diversification collapses ($\text{ENB} = 1.47$) due to dominant equity risk. QuantEvo balances nominal allocation ($\text{ENC} = 3.80$) with orthogonal bets ($\text{ENB} = 3.60$), though binding ENC floors impose an observable efficiency trade-off.
+3. **2008 Financial Crisis**: During the 2008 liquidation (Window 3, July 2008 to July 2010), defensive allocations to US Treasuries contained QuantEvo's maximum drawdown to 10.34%, compared to 28.64% for Naive Equal Weight and 23.48% for the Static Risk Parity Proxy.
 
-Detailed window-by-window analyses, crisis breakdowns (including 2008 and the 2020 COVID crash), and 2022 infeasibility mechanics are documented in [EXPERIMENTS.md](./EXPERIMENTS.md).
+Detailed window-by-window analyses, crisis breakdowns (including 2008 and the 2020 COVID crash), and 2022 infeasibility mechanics for both strategy examples are documented in [EXPERIMENTS.md](./EXPERIMENTS.md).
 
 ---
 
-## 📐 3. Methodology and Mathematical Formulation
+## 📐 3. Methodology and Formulation
 
-### 3.1 Formal MINLP Portfolio Formulation
-QuantEvo models portfolio selection as a multi-objective Mixed-Integer Non-Linear Programming problem:
+### 3.1 MINLP Portfolio Formulation
+Portfolio selection is modeled as a multi-objective Mixed-Integer Non-Linear Programming problem:
 
 $$\begin{aligned}
 \min_{w \in \mathbb{R}^N, \, z \in \{0, 1\}^N} \quad & \mathbf{F}(w) = \left( f_1(w), \dots, f_M(w) \right)^T \\
@@ -73,8 +70,8 @@ $$\begin{aligned}
 
 where $w_i$ is the weight of asset $i$, $z_i$ is a binary decision variable indicating whether asset $i$ is held, $u_i$ is the individual upper cap, $w_{min}$ is the semi-continuous allocation threshold, and $k_{min}, k_{max}$ are cardinality bounds.
 
-### 3.2 Heuristic Repair with Continuous Projection (Bisection Water-Filling)
-Genetic algorithms struggle with MINLP constraints because continuous crossover and mutation operators generate infeasible offspring with probability close to 1. QuantEvo eliminates soft penalty terms via a deterministic repair operator that combines greedy cardinality selection with continuous projection on the simplex (`src/optimization/repair.py`):
+### 3.2 Heuristic Repair Operator (Bisection Water-Filling)
+Standard crossover and mutation operators almost always generate infeasible portfolios under cardinality and semi-continuous bounds. Instead of soft penalties, QuantEvo uses a deterministic repair operator that projects candidate vectors directly onto the feasible simplex (`src/optimization/repair.py`):
 
 1. **Asset Eligibility Filtering**: Discards any asset $i$ where individual capacity $u_i < w_{min}$.
 2. **Cardinality Selection via Continuous Scores**: Assigns each eligible asset a score equal to its continuous candidate weight generated by GA variation: $s_i = w_i^{\text{raw}}$. Assets are sorted in descending order of score. The active cardinality $k$ is dynamically determined by counting assets where $s_i \ge w_{min}$ (clamped to $[k_{min}, \min(k_{max}, \lfloor 1/w_{min} \rfloor, n_{\text{elig}})]$).
@@ -96,38 +93,36 @@ where $R_{(1)} \le R_{(2)} \le \dots \le R_{(T)}$ are sorted daily portfolio ret
 ### 3.4 Moving Block Bootstrap
 To preserve empirical autocorrelation and volatility clustering without parametric assumptions, return paths are simulated via Moving Block Bootstrap (Künsch, 1989) with overlapping blocks of length $L = 20$ trading days sampled with replacement.
 
-### 3.5 Effective Number of Bets (Attilio Meucci, 2009)
-Nominal weights do not reflect true risk concentration. QuantEvo implements Meucci's orthogonal factor decomposition using Principal Component Analysis (PCA) across bootstrapped covariance matrices:
-1. Decompose the covariance matrix: $\Sigma = V \Lambda V^T$, where $V$ contains the orthonormal eigenvectors (orthogonal risk factors) and $\Lambda = \text{diag}(\lambda_1, \dots, \lambda_N)$.
-2. Calculate the variance attributed to each orthogonal bet:
+### 3.5 Effective Number of Bets (Meucci, 2009)
+Nominal capital weights do not reflect risk concentration. QuantEvo implements Meucci's orthogonal factor decomposition using Principal Component Analysis (PCA):
+1. Decompose the covariance matrix: $\Sigma = V \Lambda V^T$, where $V$ are orthonormal eigenvectors and $\Lambda = \text{diag}(\lambda_1, \dots, \lambda_N)$.
+2. Compute the variance contribution of each orthogonal bet:
    $$p_k = \frac{(w^T v_k)^2 \lambda_k}{\sigma_p^2}, \quad \text{where } \sum_{k=1}^N p_k = 1$$
-3. Compute the exponential Shannon entropy:
+3. Evaluate the exponential Shannon entropy:
    $$\text{ENB} = \exp\left( -\sum_{k=1}^N p_k \ln p_k \right)$$
 
-When total portfolio risk is concentrated in a single factor, $\text{ENB} = 1$. When risk is evenly distributed across all $N$ orthogonal dimensions, $\text{ENB} = N$. While PCA identifies statistical rather than macroeconomic factors, combining PCA with bootstrap scenario generation captures how factor exposures shift across resampled empirical regimes.
+When risk is concentrated in a single factor, $\text{ENB} = 1$; when evenly spread across all $N$ dimensions, $\text{ENB} = N$.
 
-### 3.6 Ledoit-Wolf Optimal Covariance Shrinkage Across Bootstrap Paths
-Sample covariance matrices calculated from empirical observations are prone to estimation error and potential ill-conditioning across resampled bootstrap paths.
-
-QuantEvo applies the Ledoit-Wolf shrinkage estimator not just to static in-sample data, but **individually to each of the $B$ bootstrap paths**. For each bootstrap sample path, it shrinks the empirical covariance toward a scaled identity matrix target:
+### 3.6 Ledoit-Wolf Covariance Shrinkage
+Empirical covariance matrices can become ill-conditioned across resampled bootstrap paths. To ensure positive definiteness without parametric assumptions, Ledoit-Wolf shrinkage is calculated on each bootstrap scenario:
 $$\Sigma_{\text{shrunk}} = \delta F + (1 - \delta) \Sigma_{\text{sample}}, \quad F = \frac{\text{tr}(\Sigma_{\text{sample}})}{N} I_N$$
+where $\delta \in [0, 1]$ is the analytically optimal shrinkage intensity (Ledoit and Wolf, 2004).
 
-where $\delta \in [0, 1]$ is the analytically optimal shrinkage intensity derived by Ledoit and Wolf (2004) to minimize expected quadratic loss under the Frobenius norm. This guarantees well-conditioned, strictly positive definite covariance matrices $\Sigma^{(b)}$ for every bootstrap scenario.
-
-### 3.7 Capital Dynamics: Buy-and-Hold with Weight Drift
-Rather than assuming continuous rebalancing at zero transaction cost, out-of-sample portfolio evaluations model discrete buy-and-hold price drift, tracking real capital allocation drift between rebalancing periods.
+### 3.7 Capital Dynamics: Buy-and-Hold
+Out-of-sample evaluations track realistic buy-and-hold price drift rather than assuming continuous, friction-free rebalancing.
 
 ### 3.8 Multi-Objective Optimization (NSGA-II)
-QuantEvo adapts NSGA-II (`pymoo` backend):
-* **Hypervolume Early Stopping**: Tracks the Hypervolume (HV) indicator of the Pareto front across generations. When HV growth stops improving within a specified patience limit, the search terminates early.
-* **Knee-Point Selection**: To choose a balanced allocation from the Pareto front, QuantEvo finds the solution maximizing perpendicular distance to the line (in 2D) or plane (in 3D) connecting extreme points of the normalized front. In higher dimensions (or as fallback), it selects the solution minimizing Euclidean distance to the ideal utopia point.
-* **Multi-Seed Aggregation**: Runs optimizations across multiple random seeds, combines candidate solutions, and extracts the global non-dominated front.
+The optimization uses `pymoo` with customized components:
+* **Hypervolume Early Stopping**: Stops the GA when hypervolume growth plateaus within a patience limit.
+* **Knee-Point Selection**: Picks a balanced trade-off by finding the point furthest from the secant line (2D) or plane (3D) of extreme Pareto solutions, with Euclidean distance to the utopia point as fallback for degenerate geometry.
+* **Infeasibility Diagnostics**: When constraints cannot be met, the engine identifies the unsatisfied metrics and logs the closest value found in the population.
+* **Multi-Seed Aggregation**: Runs multiple seeds and extracts the global non-dominated front.
 
 ---
 
-## ⚙️ 4. Software Architecture and Performance
+## ⚙️ 4. Architecture and Performance
 
-The project is organized into modular components with performance-critical paths accelerated via Numba.
+The codebase separates optimization, metrics, and data loaders, compiling bottleneck loops with Numba.
 
 ```
 QuantEvo/
@@ -176,7 +171,7 @@ To make the search practical, core loops in QuantEvo use `@njit(fastmath=True, p
 ### Metric Interface (Strategy Pattern)
 Every risk and return function inherits from the base class `Metric` (`src/metrics/metric.py`):
 * Any metric can serve as an **objective function** (minimized or maximized).
-* Any metric can serve as a **non-linear constraint** by specifying a threshold and risk measure (percentile or CVaR), automatically normalized as $g(w) \le 0$ for `pymoo`.
+* Any metric can serve as a **non-linear constraint** by specifying a threshold and aggregation measure across bootstrap paths (`cvar`, `percentile`, or `downside_penalty` with semi-deviation), automatically normalized as $g(w) \le 0$ for `pymoo`.
 
 ---
 
@@ -223,7 +218,9 @@ This command generates:
 To reproduce the benchmark comparison tables and plot images, open and run the notebook `other/compare_exp_b.ipynb`.
 
 ### 5.4 Creating a Custom Configuration
-To test your own asset universe and investment strategy, create a new configuration file (for example, `my_strategy.py`):
+Configurations are standalone Python modules loaded dynamically at runtime via `importlib`, allowing external strategies to be tested without modifying the package source code.
+
+To test your own asset universe and investment strategy, create a configuration file (for example, `my_strategy.py`):
 
 ```python
 from src.constants import TRADING_DAYS_PER_YEAR
