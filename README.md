@@ -6,22 +6,24 @@
 
 ## 🎯 1. Overview and Motivation
 
-Classic mean-variance optimization (Markowitz, 1952) assumes Gaussian returns, perfectly known parameters, and continuous convex constraints. In practice, financial returns have heavy tails and volatility clustering, while realistic allocations require cardinality limits ($k_{\min} \le \|w\| \le k_{max}  $) and semi-continuous thresholds ($w_i \ge w_{\min}$ or $w_i = 0$) that make exact solving NP-hard.
+Classic mean-variance optimization (Markowitz, 1952) assumes Gaussian returns, perfectly known parameters, and continuous convex constraints. In practice, financial returns exhibit heavy tails and volatility clustering, while realistic allocations often require cardinality limits ($k_{\min} \le \|w\| \le k_{\max}$) and semi-continuous thresholds ($w_i \ge w_{\min}$ or $w_i = 0$) that make exact solving NP-hard.
 
-QuantEvo combines genetic optimization with non-parametric risk modeling:
-* **Heuristic repair (bisection water-filling)**: Projects candidate weights onto the constrained simplex in $\mathcal{O}(k \log(1/\epsilon))$ iterations without soft penalty tuning.
-* **Moving Block Bootstrap**: Resamples overlapping return blocks to keep empirical autocorrelation and volatility clustering intact.
-* **Meucci's Effective Number of Bets (ENB)**: Decomposes portfolio variance via PCA into orthogonal factors and tracks entropy to detect true factor concentration.
-* **Ledoit-Wolf shrinkage**: Conditions bootstrap covariance matrices against numerical singularity.
-* **NSGA-II multi-objective GA**: Explores Pareto trade-offs (e.g. CVaR vs. Drawdown or CAGR) with Hypervolume early stopping and knee-point selection.
-* **Numba parallel JIT**: Compiles bootstrap evaluations and constraint projections down to multi-threaded machine code.
-* **Rolling walk-forward framework**
+QuantEvo is an open-source Python framework designed for constrained, multi-objective portfolio optimization. It combines genetic algorithms (NSGA-II) with non-parametric risk modeling, providing an extensible software architecture accelerated via Numba JIT to handle mixed-integer investment constraints.
+
+Core components and implemented literature techniques:
+* **Heuristic Simplex Projection (Bisection Water-Filling)**: Adapts classical 1D bisection water-filling (Patriksson, 2008; Boyd & Vandenberghe, 2004) with greedy cardinality selection and feasibility swaps to project candidate weights onto the constrained simplex in $\mathcal{O}(k \log(1/\epsilon))$ iterations without soft penalty tuning.
+* **Moving Block Bootstrap (Künsch, 1989)**: Resamples overlapping return blocks to preserve empirical autocorrelation and volatility clustering without parametric assumptions.
+* **Meucci's Effective Number of Bets (ENB, 2009)**: Implements Meucci's orthogonal factor decomposition via PCA and exponential Shannon entropy to monitor true factor concentration.
+* **Ledoit-Wolf Covariance Shrinkage (2004)**: Conditions bootstrap sample covariance matrices to prevent numerical ill-conditioning.
+* **NSGA-II Multi-Objective Optimization (Deb et al., 2002)**: Explores Pareto trade-offs (e.g. CVaR vs. Drawdown or CAGR) via `pymoo`, extended with hypervolume early stopping and knee-point selection.
+* **Numba Parallel JIT**: Accelerates bottleneck computations (bootstrap evaluations, metrics, constraint projections) with multi-threaded machine code.
+* **Rolling Walk-Forward Framework**: Automated backtesting pipeline evaluating out-of-sample performance across historical regimes without lookahead bias.
 
 ---
 
 ## 📊 2. Walk-Forward Backtest Examples
 
-To evaluate how the algorithm handles real market regimes, QuantEvo executes a rolling walk-forward backtest over 25 years (July 2001 to July 2026, 11 windows of 3-year in-sample / 2-year out-of-sample).
+To evaluate how the framework handles real market regimes and enforce constraints out-of-sample, QuantEvo executes a rolling walk-forward backtest over 25 years (July 2001 to July 2026, 11 windows of 3-year in-sample / 2-year out-of-sample).
 
 To avoid synthetic splicing across 25 years, the backtest uses historical Vanguard index mutual funds (`VTSMX`, `VTMGX`, `VEIEX`, `VBMFX`, `VUSTX`, `VGSIX`, `VFISX`).
 
@@ -54,7 +56,7 @@ Detailed window-by-window analyses, crisis breakdowns (including 2008 and the 20
 
 ---
 
-## 📐 3. Methodology and Formulation
+## 📐 3. Implemented Models and Formulation
 
 ### 3.1 MINLP Portfolio Formulation
 Portfolio selection is modeled as a multi-objective Mixed-Integer Non-Linear Programming problem:
@@ -70,8 +72,12 @@ $$\begin{aligned}
 
 where $w_i$ is the weight of asset $i$, $z_i$ is a binary decision variable indicating whether asset $i$ is held, $u_i$ is the individual upper cap, $w_{min}$ is the semi-continuous allocation threshold, and $k_{min}, k_{max}$ are cardinality bounds.
 
-### 3.2 Heuristic Repair Operator (Bisection Water-Filling)
-Standard crossover and mutation operators almost always generate infeasible portfolios under cardinality and semi-continuous bounds. Instead of soft penalties, QuantEvo uses a deterministic repair operator that projects candidate vectors directly onto the feasible simplex (`src/optimization/repair.py`):
+### 3.2 Heuristic Simplex Projection Operator (Bisection Water-Filling)
+Standard crossover and mutation operators frequently generate infeasible portfolios under cardinality and semi-continuous bounds. 
+
+Projection onto a box-constrained simplex ($l_i \le w_i \le u_i, \sum w_i = 1$) is a classical resource allocation problem in convex optimization (Patriksson, 2008; Boyd & Vandenberghe, 2004). Applying KKT optimality conditions reduces the continuous projection to finding a single scalar shift $\lambda$ (water-filling) via monotonic 1D root-finding.
+
+QuantEvo adapts this standard bisection water-filling into a heuristic repair operator for genetic algorithms by wrapping it with discrete cardinality selection, combinatorial feasibility swaps, and numerical residual absorption (`src/optimization/repair.py`):
 
 1. **Asset Eligibility Filtering**: Discards any asset $i$ where individual capacity $u_i < w_{min}$.
 2. **Cardinality Selection via Continuous Scores**: Assigns each eligible asset a score equal to its continuous candidate weight generated by GA variation: $s_i = w_i^{\text{raw}}$. Assets are sorted in descending order of score. The active cardinality $k$ is dynamically determined by counting assets where $s_i \ge w_{min}$ (clamped to $[k_{min}, \min(k_{max}, \lfloor 1/w_{min} \rfloor, n_{\text{elig}})]$).
@@ -302,6 +308,8 @@ python main.py --config my_strategy.py
 6. **Rockafellar, R. T., & Uryasev, S.** (2000). Optimization of conditional value-at-risk. *Journal of Risk*, 2(3), 21-41.
 7. **Deb, K., Pratap, A., Agarwal, S., & Meyarivan, T.** (2002). A fast and elitist multiobjective genetic algorithm: NSGA-II. *IEEE Transactions on Evolutionary Computation*, 6(2), 182-197.
 8. **Keating, C., & Shadwick, W. F.** (2002). A universal performance measure. *Journal of Performance Measurement*, 6(3), 59-86.
+9. **Patriksson, M.** (2008). A survey on the continuous nonlinear resource allocation problem. *European Journal of Operational Research*, 185(1), 1-46.
+10. **Boyd, S., & Vandenberghe, L.** (2004). *Convex Optimization*. Cambridge University Press. (Section 5.5: Water-filling).
 
 ## 📄 License
 

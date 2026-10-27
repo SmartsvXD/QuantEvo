@@ -1,6 +1,6 @@
-# 🔬 QuantEvo: Example Strategies and Walk-Forward Benchmark Analysis
+# 🔬 QuantEvo: Walk-Forward Benchmark & Software Stress-Testing
 
-Walk-forward backtest results across 25 years (2001 to 2026) for two sample strategies (Example A and Example B), evaluating out-of-sample window performance, crisis behavior, and portfolio weight stability across market regimes.
+Out-of-sample walk-forward validation across 25 years (2001 to 2026) for two reference strategy profiles (Example A and Example B). This empirical evaluation stress-tests the optimization framework, assessing constraint feasibility, computational stability, and weight behavior under shifting historical market regimes.
 
 ---
 
@@ -129,7 +129,7 @@ In anticipation of policy rate tightening, the optimizer reduced portfolio durat
 ![Window 9 Performance](./other/docs_data/exp_b/images/window_9_performance.png)
 
 ### 2.5 Infeasibility in Windows 10 and 11: Feasible Space Analysis
-In Windows 10 (IS 2019 to 2022) and 11 (IS 2021 to 2024), Example B identified no candidate solution satisfying the joint constraint set. The 2022 global monetary tightening caused simultaneous contractions in equity and fixed-income assets, temporarily eliminating the negative stock-bond correlation. Under these empirical returns, achieving $\text{CAGR} \ge 4.0\%$ required concentrating capital in select outperforming equities, which mutually excluded the minimum factor diversification ($\text{ENB} \ge 3.5$) and constituent count ($\text{ENC} \ge 3.8$) bounds. Consequently, the hard constraints over-constrained the problem, yielding an empty feasible set $\mathcal{F} = \emptyset$. The diagnostic engine explicitly isolated the binding bottlenecks, logging the closest attainable values across the population.
+In Windows 10 (IS 2019 to 2022) and 11 (IS 2021 to 2024), Example B identified no candidate solution satisfying the joint constraint set. The 2022 global monetary tightening caused simultaneous contractions in equity and fixed-income assets, temporarily eliminating the negative stock-bond correlation. Under these empirical returns, achieving $\text{CAGR} \ge 4.0\%$ required concentrating capital in select outperforming equities, which mutually excluded the minimum factor diversification ($\text{ENB} \ge 3.5$) and constituent count ($\text{ENC} \ge 3.8$) bounds. Consequently, the hard constraints over-constrained the problem, yielding an empty feasible set $\mathcal{F} = \emptyset$. The diagnostic engine explicitly isolated the binding bottlenecks, logging the closest attainable values across the population instead of crashing or generating invalid weights.
 
 By comparison, **Example A** maintained feasible solutions across both windows (OOS CAGRs of 6.90% in Window 10 and 12.53% in Window 11) because its diversification floors ($\text{ENB} \ge 1.35$, $\text{ENC} \ge 2.0$) were compatible with the empirical joint distribution of that cycle.
 
@@ -239,8 +239,8 @@ The table below reports the normalized weight distribution across the 10 feasibl
 
 ## 💡 5. Synthesis and Practical Takeaways
 
-The walk-forward backtest examples highlight three quantitative properties of the framework:
+The walk-forward validation highlights three key properties of the framework:
 
 1. **Decoupling of Nominal and Factor Diversification**: Equal capital allocation ($ENC \approx 7.0$) repeatedly failed to provide downside risk mitigation during market shocks due to shared factor exposure ($ENB \approx 1.1\text{–}1.4$). Incorporating Meucci's entropy metric explicitly forced allocations into uncorrelated components, reducing maximum drawdowns to 5.80% (Example B).
-2. **Allocation Regularization**: Applying Ledoit-Wolf shrinkage individually to each bootstrap path stabilized the empirical covariance estimation, preventing corner solutions and producing stable asset class weights across rolling windows without explicit turnover penalties.
-3. **Sensitivity to Correlation Breakdown**: Hard multi-objective constraints bounded tail risk effectively during historical equity crashes, but produced an empty feasible set during the simultaneous stock-bond decline of 2022. Maintaining feasibility across structural regime breaks requires adaptive or regime-aware constraint thresholds, as shown by the continuous feasibility of Example A.
+2. **Allocation Regularization via Shrinkage**: Applying Ledoit-Wolf shrinkage individually to each bootstrap path stabilized the empirical covariance estimation, preventing corner solutions and producing stable asset class weights across rolling windows without explicit turnover penalties.
+3. **Robust Constraint Diagnostics under Correlation Breakdown**: Hard multi-objective constraints bounded tail risk effectively during historical equity crashes, but produced an empty feasible set during the simultaneous stock-bond decline of 2022. Rather than yielding invalid weights or looping indefinitely, the framework gracefully detected the infeasibility, isolating the binding constraints. Maintaining feasibility across structural regime breaks requires adaptive or regime-aware constraint thresholds, as shown by the continuous feasibility of Example A.
