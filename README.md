@@ -14,6 +14,8 @@ Core components and implemented literature techniques:
 * **Heuristic Simplex Projection (Bisection Water-Filling)**: Adapts classical 1D bisection water-filling (Patriksson, 2008; Boyd & Vandenberghe, 2004) with greedy cardinality selection and feasibility swaps to project candidate weights onto the constrained simplex in $\mathcal{O}(k \log(1/\epsilon))$ iterations without soft penalty tuning.
 * **Moving Block Bootstrap (Künsch, 1989)**: Resamples overlapping return blocks to preserve empirical autocorrelation and volatility clustering without parametric assumptions.
 * **Meucci's Effective Number of Bets (ENB, 2009)**: Implements Meucci's orthogonal factor decomposition via PCA and exponential Shannon entropy to monitor true factor concentration.
+* **Effective Number of Constituents (ENC, Herfindahl, 1950)**: Tracks nominal constituent diversification via the Inverse Herfindahl-Hirschman Index.
+* **Coherent Risk and Performance Metrics**: Evaluates tail losses via daily CVaR (Rockafellar & Uryasev, 2000; Artzner et al., 1999) and gain-to-loss asymmetry via the Omega ratio (Keating & Shadwick, 2002).
 * **Ledoit-Wolf Covariance Shrinkage (2004)**: Conditions bootstrap sample covariance matrices to prevent numerical ill-conditioning.
 * **NSGA-II Multi-Objective Optimization (Deb et al., 2002)**: Explores Pareto trade-offs (e.g. CVaR vs. Drawdown or CAGR) via `pymoo`, extended with hypervolume early stopping and knee-point selection.
 * **Numba Parallel JIT**: Accelerates bottleneck computations (bootstrap evaluations, metrics, constraint projections) with multi-threaded machine code.
@@ -90,7 +92,7 @@ QuantEvo adapts this standard bisection water-filling into a heuristic repair op
 The repair operator is compiled with Numba JIT to enable high-throughput constraint projection during genetic variation.
 
 ### 3.3 Conditional Value-at-Risk (CVaR)
-Tail risk is quantified via daily CVaR at confidence level $1 - \alpha$ (Rockafellar & Uryasev, 2000), computed non-parametrically across bootstrap return paths:
+Tail risk is quantified via daily CVaR at confidence level $1 - \alpha$ (Rockafellar & Uryasev, 2000). Unlike Value-at-Risk (VaR), CVaR satisfies the subadditivity and convexity axioms of a coherent risk measure (Artzner et al., 1999), and is computed non-parametrically across bootstrap return paths:
 
 $$\widehat{\text{CVaR}}_\alpha(w) = -\frac{1}{\lfloor \alpha T \rfloor} \sum_{t=1}^{\lfloor \alpha T \rfloor} R_{(t)}$$
 
@@ -109,15 +111,29 @@ Nominal capital weights do not reflect risk concentration. QuantEvo implements M
 
 When risk is concentrated in a single factor, $\text{ENB} = 1$; when evenly spread across all $N$ dimensions, $\text{ENB} = N$.
 
-### 3.6 Ledoit-Wolf Covariance Shrinkage
+### 3.6 Effective Number of Constituents (ENC)
+To monitor capital dispersion independently of factor risk, QuantEvo evaluates nominal constituent spread via the Inverse Herfindahl-Hirschman Index (Herfindahl, 1950):
+
+$$\text{ENC} = \frac{1}{\sum_{i=1}^N w_i^2}$$
+
+For an equal-weight portfolio of $k$ assets, $\text{ENC} = k$; when capital is fully allocated to a single holding, $\text{ENC} = 1$.
+
+### 3.7 Ledoit-Wolf Covariance Shrinkage
 Empirical covariance matrices can become ill-conditioned across resampled bootstrap paths. To ensure positive definiteness without parametric assumptions, Ledoit-Wolf shrinkage is calculated on each bootstrap scenario:
 $$\Sigma_{\text{shrunk}} = \delta F + (1 - \delta) \Sigma_{\text{sample}}, \quad F = \frac{\text{tr}(\Sigma_{\text{sample}})}{N} I_N$$
 where $\delta \in [0, 1]$ is the analytically optimal shrinkage intensity (Ledoit and Wolf, 2004).
 
-### 3.7 Capital Dynamics: Buy-and-Hold
+### 3.8 Omega Ratio (Keating & Shadwick, 2002)
+To capture higher-moment asymmetries and evaluate return distributions beyond mean-variance frameworks, QuantEvo evaluates the Omega ratio against an annualized benchmark hurdle rate $\gamma$:
+
+$$\Omega(\gamma) = \frac{\sum_{t=1}^T \max(R_t - \gamma_{\text{period}}, 0)}{\sum_{t=1}^T \max(\gamma_{\text{period}} - R_t, 0)}$$
+
+where $\gamma_{\text{period}} = (1 + \gamma)^{1/12} - 1$ represents the compound hurdle rate across monthly sub-periods (`src/metrics/omega.py`).
+
+### 3.9 Capital Dynamics: Buy-and-Hold
 Out-of-sample evaluations track realistic buy-and-hold price drift rather than assuming continuous, friction-free rebalancing.
 
-### 3.8 Multi-Objective Optimization (NSGA-II)
+### 3.10 Multi-Objective Optimization (NSGA-II)
 The optimization uses `pymoo` with customized components:
 * **Hypervolume Early Stopping**: Stops the GA when hypervolume growth plateaus within a patience limit.
 * **Knee-Point Selection**: Picks a balanced trade-off by finding the point furthest from the secant line (2D) or plane (3D) of extreme Pareto solutions, with Euclidean distance to the utopia point as fallback for degenerate geometry.
@@ -145,7 +161,7 @@ QuantEvo/
 │   ├── utils.py              # Plotting and CSV export helpers
 │   ├── compare_exp_a.ipynb   # Visual comparison and benchmark generation for Exp A
 │   ├── compare_exp_b.ipynb   # Visual comparison and benchmark generation for Exp B
-│   └── output/               # Backtest CSV results and performance plots
+│   └── docs_data/            # Backtest CSV results and performance plots
 │       ├── exp_a/
 │       └── exp_b/
 └── src/
@@ -310,6 +326,7 @@ python main.py --config my_strategy.py
 8. **Keating, C., & Shadwick, W. F.** (2002). A universal performance measure. *Journal of Performance Measurement*, 6(3), 59-86.
 9. **Patriksson, M.** (2008). A survey on the continuous nonlinear resource allocation problem. *European Journal of Operational Research*, 185(1), 1-46.
 10. **Boyd, S., & Vandenberghe, L.** (2004). *Convex Optimization*. Cambridge University Press. (Section 5.5: Water-filling).
+11. **Herfindahl, O. C.** (1950). *Concentration in the U.S. Steel Industry*. Unpublished doctoral dissertation, Columbia University.
 
 ## 📄 License
 
